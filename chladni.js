@@ -1138,9 +1138,6 @@ class ChladniSimulator {
   
   _setupUX() {
     this._setLanguage(this.currentLanguage);
-    if (this.uiElements['lang-toggle-btn']) {
-      this.uiElements['lang-toggle-btn'].style.display = 'none';
-    }
   }
 
   _setLanguage(lang) {
