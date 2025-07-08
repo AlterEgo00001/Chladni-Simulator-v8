@@ -1337,7 +1337,7 @@ class ChladniSimulator {
       this.audioElement.pause();
       this.isAudioFilePaused = true;
     }
-    this.uiElements.toggleAudioPauseButton.textContent = this.isAudioFilePaused ? "Продолжить" : "Пауза";
+    if (this.uiElements.toggleAudioPauseButton) this.uiElements.toggleAudioPauseButton.textContent = this.isAudioFilePaused ? "Продолжить" : "Пауза";
   }
 
   _updateAudioFileUI() {
