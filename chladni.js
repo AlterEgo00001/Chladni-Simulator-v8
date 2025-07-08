@@ -7,7 +7,6 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
 const FDM_FRAGMENT_SHADER = `
   #define PI 3.141592653589793
-
   uniform sampler2D u_fdmTexture_read;
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
@@ -21,7 +20,6 @@ const FDM_FRAGMENT_SHADER = `
   uniform float u_plateRadius;
   uniform int u_mParam;
   uniform int u_excMode;
-
   float sample_boundary(vec2 uv, vec2 offset) {
     vec2 sample_uv = uv + offset;
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
@@ -30,22 +28,18 @@ const FDM_FRAGMENT_SHADER = `
     }
     return texture(u_fdmTexture_read, sample_uv).r;
   }
-
   void main() {
     vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_fdmTexture_read, 0));
     vec2 texelSize = 1.0 / vec2(textureSize(u_fdmTexture_read, 0));
-
     float physX = (uv.x - 0.5) * u_plateRadius * 2.0;
     float physY = (uv.y - 0.5) * u_plateRadius * 2.0;
     if (length(vec2(physX, physY)) > u_plateRadius) {
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-
     vec4 data = texture(u_fdmTexture_read, uv);
     float u_curr = data.r;
     float u_prev = data.g;
-
     float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
     float u_ip1j = sample_boundary(uv, vec2(0.0, texelSize.y));
     float u_im1j = sample_boundary(uv, vec2(0.0, -texelSize.y));
@@ -59,11 +53,9 @@ const FDM_FRAGMENT_SHADER = `
     float u_im2j = sample_boundary(uv, vec2(0.0, -2.0 * texelSize.y));
     float u_ijp2 = sample_boundary(uv, vec2(2.0 * texelSize.x, 0.0));
     float u_ijm2 = sample_boundary(uv, vec2(-2.0 * texelSize.x, 0.0));
-
     float biharmonic = (20.0 * u_curr - 8.0 * (u_ip1j + u_im1j + u_ijp1 + u_ijm1) +
                        2.0 * (u_ip1jp1 + u_ip1jm1 + u_im1jp1 + u_im1jm1) +
                        (u_ip2j + u_im2j + u_ijp2 + u_ijm2)) * inv_dx4;
-
     float excForce = 0.0;
     float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
@@ -77,12 +69,10 @@ const FDM_FRAGMENT_SHADER = `
         excForce = u_excAmp * timeSine * exp(-distSq / 0.001);
       }
     }
-
     float K_coeff = (u_dt * u_dt * u_D_flexural) / u_rho_h;
     float F_coeff = (u_dt * u_dt) / u_rho_h;
     float u_next = (2.0 * u_curr - u_prev) - K_coeff * biharmonic + F_coeff * excForce;
     u_next *= (1.0 - u_damp);
-
     gl_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
   }
 `;
@@ -101,25 +91,21 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_repulsionRadius;
   uniform float u_repulsionStrength;
   uniform float u_stuckThreshold;
-
   void main() {
     vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_particleTexture_read, 0));
     vec4 data = texture(u_particleTexture_read, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
-
     if (pos.x > 900.0) {
       gl_FragColor = vec4(pos, vel);
       return;
     }
-
     vec2 normPos = pos / u_plateWidth + 0.5;
     float disp = texture(u_displacementTexture, normPos).r;
     vec2 texelSizeDisp = 1.0 / vec2(textureSize(u_displacementTexture, 0));
     float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
     float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
-
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
       vec2 texelSizeParticle = 1.0 / vec2(textureSize(u_particleTexture_read, 0));
       vec2 repulsionForce = vec2(0.0);
@@ -136,29 +122,24 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       }
       force += repulsionForce;
     }
-
     vel = (vel + force * u_deltaTime) * u_damping;
     if (length(vel) > u_maxSpeed) vel = normalize(vel) * u_maxSpeed;
     pos += vel * u_deltaTime;
-
     if (length(pos) > u_plateRadius) {
       pos = normalize(pos) * u_plateRadius;
       vec2 normB = pos / u_plateRadius;
       vel -= (1.0 + u_restitution) * dot(vel, normB) * normB;
     }
-
     if (u_stuckThreshold > 0.0 && length(vel) < u_stuckThreshold && abs(disp) > 0.05) {
       pos = vec2(1001.0, 1001.0);
       vel = vec2(0.0, 0.0);
     }
-
     gl_FragColor = vec4(pos, vel);
   }
 `;
 
 const PARTICLE_VERTEX_SHADER = `
   attribute float instanceId;
-
   uniform mat4 modelViewMatrix;
   uniform mat4 projectionMatrix;
   uniform sampler2D u_particleTexture;
@@ -170,45 +151,35 @@ const PARTICLE_VERTEX_SHADER = `
   uniform float u_rotationAngle;
   uniform float u_activeParticleCount;
   uniform float u_particleSize;
-
   varying vec3 v_worldPosition;
   varying vec3 v_normal;
   varying vec2 v_particleUV;
-
   void main() {
     if (instanceId >= u_activeParticleCount) {
       gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-
     v_particleUV = vec2(
       mod(instanceId, u_particleTexResolution.x) + 0.5,
       floor(instanceId / u_particleTexResolution.x) + 0.5
     ) / u_particleTexResolution;
-    
     vec4 data = texture(u_particleTexture, v_particleUV);
     vec2 pos2D = data.rg;
-
     if (pos2D.x > 900.0) {
       gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-
     vec2 normPos = pos2D / u_plateWidth + 0.5;
     float disp = texture(u_displacementTexture, normPos).r;
     float visHeight = clamp(disp * u_visScale, -u_maxVisAmp, u_maxVisAmp);
-
     float cosA = cos(u_rotationAngle);
     float sinA = sin(u_rotationAngle);
     float rotX = pos2D.x * cosA - pos2D.y * sinA;
     float rotZ = pos2D.x * sinA + pos2D.y * cosA;
-    
     vec3 finalOffset = vec3(rotX, visHeight, rotZ);
     vec3 scaledPosition = position * u_particleSize;
-    
     v_worldPosition = finalOffset + scaledPosition;
     v_normal = normalize(position);
-
     vec4 mvPosition = modelViewMatrix * vec4(v_worldPosition, 1.0);
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -218,7 +189,6 @@ const PARTICLE_FRAGMENT_SHADER = `
   varying vec3 v_worldPosition;
   varying vec3 v_normal;
   varying vec2 v_particleUV;
-
   uniform sampler2D u_particleTexture;
   uniform vec3 u_lightPos;
   uniform vec3 u_cameraPos;
@@ -227,10 +197,8 @@ const PARTICLE_FRAGMENT_SHADER = `
   uniform float u_maxSpeedForColor;
   uniform vec3 u_coldColor;
   uniform vec3 u_hotColor;
-
   void main() {
     vec3 baseColor;
-
     if (u_colorMode > 0.5) {
       vec2 vel = texture(u_particleTexture, v_particleUV).ba;
       float speed = length(vel);
@@ -239,25 +207,19 @@ const PARTICLE_FRAGMENT_SHADER = `
     } else {
       baseColor = u_globalColor;
     }
-
     vec3 normal = normalize(v_normal);
     vec3 lightDir = normalize(u_lightPos - v_worldPosition);
     vec3 viewDir = normalize(u_cameraPos - v_worldPosition);
     vec3 reflectDir = reflect(-lightDir, normal);
-    
     float ambientStrength = 0.3;
     vec3 ambient = ambientStrength * baseColor;
-    
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 diffuse = diff * baseColor;
-    
     float specularStrength = 0.8;
     float shininess = 32.0;
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
     vec3 specular = specularStrength * spec * vec3(1.0);
-
     vec3 finalColor = ambient + diffuse + specular;
-
     gl_FragColor = vec4(finalColor, 1.0);
   }
 `;
@@ -275,7 +237,6 @@ const GPU_PARTICLE_COUNT_DEFAULT = 65536;
 const PARTICLE_FORCE_BASE_DEFAULT = 2.5e6;
 const PARTICLE_DAMPING_BASE_DEFAULT = 0.96;
 const MAX_PARTICLE_SPEED_DEFAULT = 25.0;
-const PARTICLE_SIZE_DEFAULT = 1.0;
 const ENABLE_REPULSION_DEFAULT = true;
 const REPULSION_RADIUS_DEFAULT = 0.18;
 const REPULSION_STRENGTH_DEFAULT = 0.008;
@@ -328,7 +289,6 @@ class ChladniSimulator {
     this.PARTICLE_FORCE_BASE = PARTICLE_FORCE_BASE_DEFAULT;
     this.PARTICLE_DAMPING_BASE = PARTICLE_DAMPING_BASE_DEFAULT;
     this.MAX_PARTICLE_SPEED = MAX_PARTICLE_SPEED_DEFAULT;
-    this.PARTICLE_SIZE = PARTICLE_SIZE_DEFAULT;
     this.ENABLE_PARTICLE_REPULSION = ENABLE_REPULSION_DEFAULT;
     this.PARTICLE_REPULSION_RADIUS = REPULSION_RADIUS_DEFAULT;
     this.PARTICLE_REPULSION_STRENGTH = REPULSION_STRENGTH_DEFAULT;
@@ -402,6 +362,7 @@ class ChladniSimulator {
     
     this.onsetHistory = [];
     this.onsetHistoryMaxLength = 300;
+    this.lastBPM = 0;
     this.lastBPMUpdateTime = 0;
     
     this.isMicrophoneEnabled = false;
@@ -428,7 +389,7 @@ class ChladniSimulator {
         this._mainInitialization();
     } catch (error) {
         console.error("Critical error during main initialization:", error);
-        document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center;"><h1>Критическая ошибка</h1><p>Не удалось инициализировать симулятор. Проверьте консоль разработчика (F12) для получения подробной информации.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
+        document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center; font-family: sans-serif;"><h1>Критическая ошибка</h1><p>Не удалось инициализировать симулятор. Проверьте консоль разработчика (F12) для получения подробной информации.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
     }
   }
 
@@ -439,7 +400,7 @@ class ChladniSimulator {
 
   _parseInputNumber(value, defaultValue = 0, isInt = false, minVal = -Infinity, maxVal = Infinity) {
     let num = isInt ? parseInt(value) : parseFloat(value);
-    if (isNaN(num) || !isFinite(num)) { return defaultValue; }
+    if (isNaN(num) || !isFinite(num)) return defaultValue;
     return Math.max(minVal, Math.min(maxVal, num));
   }
 
@@ -464,9 +425,7 @@ class ChladniSimulator {
     if (m < 0 || n <= 0) return null;
     const cacheKey = `${m},${n}`;
     if (this.besselZerosCache[cacheKey]) return this.besselZerosCache[cacheKey];
-    if (!this.besselRootsTable || !this.besselRootsTable.hasOwnProperty(m) || (n - 1) >= this.besselRootsTable[m].length) {
-      return null;
-    }
+    if (!this.besselRootsTable || !this.besselRootsTable.hasOwnProperty(m) || (n - 1) >= this.besselRootsTable[m].length) return null;
     const root = this.besselRootsTable[m][n - 1];
     this.besselZerosCache[cacheKey] = root;
     return root;
@@ -490,10 +449,8 @@ class ChladniSimulator {
     this._storeDefaultSimulationSettings();
     this._setupThreeJSScene();
     this._setupWebAudioSystem();
-    
     this._setupGPUSimulation();
     this._createParticleSystem();
-
     this._setupEventListeners();
     this._createPianoKeys();
     this._resetAllSettingsToDefaults(false);
@@ -517,52 +474,49 @@ class ChladniSimulator {
     }
     
     const particleTexSize = Math.ceil(Math.sqrt(this.MAX_PARTICLE_COUNT));
-    this.gpuCompute = new GPUComputationRenderer(this.GRID_SIZE, this.GRID_SIZE, this.renderer);
+    const fdmTexSize = this.GRID_SIZE;
+    const computeTexSize = Math.max(particleTexSize, fdmTexSize);
+    
+    this.gpuCompute = new GPUComputationRenderer(computeTexSize, computeTexSize, this.renderer);
     
     const fdmTexture = this.gpuCompute.createTexture();
-    this._fillFDMTexture(fdmTexture);
+    this._fillFDMTexture(fdmTexture, fdmTexSize);
     this.fdmVariable = this.gpuCompute.addVariable("u_fdmTexture_read", FDM_FRAGMENT_SHADER, fdmTexture);
     if (!this.fdmVariable) throw new Error("Failed to create FDM GPGPU variable. Check FDM shader for errors.");
-
-    this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable]);
-    
-    const fdmUniforms = this.fdmVariable.material.uniforms;
-    fdmUniforms['u_modalPatternTexture'] = { value: null };
-    fdmUniforms['u_time'] = { value: 0.0 };
-    fdmUniforms['u_freq'] = { value: 0.0 };
-    fdmUniforms['u_excAmp'] = { value: 0.0 };
-    fdmUniforms['u_damp'] = { value: 0.0 };
-    fdmUniforms['u_dt'] = { value: 0.0 };
-    fdmUniforms['u_dx'] = { value: 0.0 };
-    fdmUniforms['u_D_flexural'] = { value: 0.0 };
-    fdmUniforms['u_rho_h'] = { value: 0.0 };
-    fdmUniforms['u_plateRadius'] = { value: this.PLATE_RADIUS };
-    fdmUniforms['u_mParam'] = { value: 0 };
-    fdmUniforms['u_excMode'] = { value: 0 };
-
-    this.gpuCompute.dispose();
-    this.gpuCompute = new GPUComputationRenderer(particleTexSize, particleTexSize, this.renderer);
     
     const particleTexture = this.gpuCompute.createTexture();
     this._fillParticleTexture(particleTexture);
     this.particleVariable = this.gpuCompute.addVariable("u_particleTexture_read", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
     if (!this.particleVariable) throw new Error("Failed to create Particle GPGPU variable. Check Particle Physics shader for errors.");
 
-    this.gpuCompute.setVariableDependencies(this.particleVariable, [this.particleVariable]);
+    this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable, this.particleVariable]);
+    this.gpuCompute.setVariableDependencies(this.particleVariable, [this.particleVariable, this.fdmVariable]);
     
-    const particleUniforms = this.particleVariable.material.uniforms;
-    particleUniforms['u_displacementTexture'] = { value: null };
-    particleUniforms['u_plateRadius'] = { value: this.PLATE_RADIUS };
-    particleUniforms['u_plateWidth'] = { value: this.PLATE_RADIUS * 2.0 };
-    particleUniforms['u_dx'] = { value: 0.0 };
-    particleUniforms['u_forceMult'] = { value: 0.0 };
-    particleUniforms['u_damping'] = { value: 0.0 };
-    particleUniforms['u_restitution'] = { value: 0.0 };
-    particleUniforms['u_maxSpeed'] = { value: 0.0 };
-    particleUniforms['u_deltaTime'] = { value: 0.0 };
-    particleUniforms['u_repulsionRadius'] = { value: 0.0 };
-    particleUniforms['u_repulsionStrength'] = { value: 0.0 };
-    particleUniforms['u_stuckThreshold'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_modalPatternTexture'] = { value: null };
+    this.fdmVariable.material.uniforms['u_time'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_freq'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_excAmp'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_damp'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_dt'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_dx'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_D_flexural'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_rho_h'] = { value: 0.0 };
+    this.fdmVariable.material.uniforms['u_plateRadius'] = { value: this.PLATE_RADIUS };
+    this.fdmVariable.material.uniforms['u_mParam'] = { value: 0 };
+    this.fdmVariable.material.uniforms['u_excMode'] = { value: 0 };
+
+    this.particleVariable.material.uniforms['u_displacementTexture'] = { value: null };
+    this.particleVariable.material.uniforms['u_plateRadius'] = { value: this.PLATE_RADIUS };
+    this.particleVariable.material.uniforms['u_plateWidth'] = { value: this.PLATE_RADIUS * 2.0 };
+    this.particleVariable.material.uniforms['u_dx'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_forceMult'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_damping'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_restitution'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_maxSpeed'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_deltaTime'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_repulsionRadius'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_repulsionStrength'] = { value: 0.0 };
+    this.particleVariable.material.uniforms['u_stuckThreshold'] = { value: 0.0 };
 
     const error = this.gpuCompute.init();
     if (error !== null) {
@@ -572,15 +526,18 @@ class ChladniSimulator {
 
   _reinitGPUSimulation() {
     if (this.gpuCompute) {
-      this.gpuCompute.dispose();
+        Object.values(this.gpuCompute.renderTargets).forEach(rt => rt.dispose());
+        this.gpuCompute.dispose();
     }
     this._setupGPUSimulation();
     this._createParticleSystem();
     this._resetFullSimulationState();
   }
 
-  _fillFDMTexture(texture) {
+  _fillFDMTexture(texture, size) {
     const arr = texture.image.data;
+    texture.image.width = size;
+    texture.image.height = size;
     for (let i = 0; i < arr.length; i += 4) {
       arr[i] = 0.0; arr[i + 1] = 0.0; arr[i + 2] = 0.0; arr[i + 3] = 0.0;
     }
@@ -731,7 +688,7 @@ class ChladniSimulator {
     this._updateModalPatternTexture();
 
     const fdmTexture = this.gpuCompute.createTexture();
-    this._fillFDMTexture(fdmTexture);
+    this._fillFDMTexture(fdmTexture, this.GRID_SIZE);
     this.gpuCompute.renderTexture(fdmTexture, this.fdmVariable.renderTargets[0]);
     this.gpuCompute.renderTexture(fdmTexture, this.fdmVariable.renderTargets[1]);
     fdmTexture.dispose();
@@ -770,36 +727,34 @@ class ChladniSimulator {
     }
 
     if (!this.areParticlesFrozen && this.gpuCompute) {
-      const fdmUniforms = this.fdmVariable.material.uniforms;
       this._updatePhysicalConstants();
       const dx = (this.PLATE_RADIUS * 2.0) / (this.GRID_SIZE - 1);
       const stabilityFactor = 0.08;
       const dt_simulation_step = (stabilityFactor * dx * dx * Math.sqrt(this.RHO_H_PLATE_SPECIFIC_DENSITY / this.D_FLEXURAL_RIGIDITY));
       
-      fdmUniforms.u_dt.value = dt_simulation_step * this.particleSimulationSpeedScale * this.FDM_STEPS_PER_FRAME;
-      fdmUniforms.u_dx.value = dx;
-      fdmUniforms.u_D_flexural.value = this.D_FLEXURAL_RIGIDITY;
-      fdmUniforms.u_rho_h.value = this.RHO_H_PLATE_SPECIFIC_DENSITY;
-      fdmUniforms.u_freq.value = this.actualAppliedFrequency;
-      fdmUniforms.u_damp.value = this.FDM_DAMPING_FACTOR;
-      fdmUniforms.u_excAmp.value = this._getFrequencyDependentExcitationAmplitude(this.actualAppliedFrequency);
-      fdmUniforms.u_time.value = this.simulationTime;
-      fdmUniforms.u_mParam.value = this.mParameter;
-      fdmUniforms.u_modalPatternTexture.value = this.modalPatternTexture;
+      this.fdmVariable.material.uniforms.u_dt.value = dt_simulation_step * this.particleSimulationSpeedScale * this.FDM_STEPS_PER_FRAME;
+      this.fdmVariable.material.uniforms.u_dx.value = dx;
+      this.fdmVariable.material.uniforms.u_D_flexural.value = this.D_FLEXURAL_RIGIDITY;
+      this.fdmVariable.material.uniforms.u_rho_h.value = this.RHO_H_PLATE_SPECIFIC_DENSITY;
+      this.fdmVariable.material.uniforms.u_freq.value = this.actualAppliedFrequency;
+      this.fdmVariable.material.uniforms.u_damp.value = this.FDM_DAMPING_FACTOR;
+      this.fdmVariable.material.uniforms.u_excAmp.value = this._getFrequencyDependentExcitationAmplitude(this.actualAppliedFrequency);
+      this.fdmVariable.material.uniforms.u_time.value = this.simulationTime;
+      this.fdmVariable.material.uniforms.u_mParam.value = this.mParameter;
+      this.fdmVariable.material.uniforms.u_modalPatternTexture.value = this.modalPatternTexture;
       
-      const particleUniforms = this.particleVariable.material.uniforms;
-      particleUniforms.u_deltaTime.value = deltaTime * this.particleSimulationSpeedScale;
-      particleUniforms.u_dx.value = dx;
-      particleUniforms.u_forceMult.value = this.PARTICLE_FORCE_BASE;
-      particleUniforms.u_damping.value = this.PARTICLE_DAMPING_BASE;
-      particleUniforms.u_restitution.value = this.PARTICLE_BOUNDARY_RESTITUTION;
-      particleUniforms.u_maxSpeed.value = this.MAX_PARTICLE_SPEED;
-      particleUniforms.u_repulsionRadius.value = this.ENABLE_PARTICLE_REPULSION ? this.PARTICLE_REPULSION_RADIUS : 0.0;
-      particleUniforms.u_repulsionStrength.value = this.PARTICLE_REPULSION_STRENGTH;
-      particleUniforms.u_stuckThreshold.value = this.enableStuckParticleCulling ? this.STUCK_PARTICLE_THRESHOLD : -1.0;
+      this.particleVariable.material.uniforms.u_deltaTime.value = deltaTime * this.particleSimulationSpeedScale;
+      this.particleVariable.material.uniforms.u_dx.value = dx;
+      this.particleVariable.material.uniforms.u_forceMult.value = this.PARTICLE_FORCE_BASE;
+      this.particleVariable.material.uniforms.u_damping.value = this.PARTICLE_DAMPING_BASE;
+      this.particleVariable.material.uniforms.u_restitution.value = this.PARTICLE_BOUNDARY_RESTITUTION;
+      this.particleVariable.material.uniforms.u_maxSpeed.value = this.MAX_PARTICLE_SPEED;
+      this.particleVariable.material.uniforms.u_repulsionRadius.value = this.ENABLE_PARTICLE_REPULSION ? this.PARTICLE_REPULSION_RADIUS : 0.0;
+      this.particleVariable.material.uniforms.u_repulsionStrength.value = this.PARTICLE_REPULSION_STRENGTH;
+      this.particleVariable.material.uniforms.u_stuckThreshold.value = this.enableStuckParticleCulling ? this.STUCK_PARTICLE_THRESHOLD : -1.0;
       
-      this.gpuCompute.compute();
-      particleUniforms.u_displacementTexture.value = this.gpuCompute.getCurrentRenderTarget(this.fdmVariable).texture;
+      this.particleVariable.material.uniforms.u_displacementTexture.value = this.gpuCompute.getCurrentRenderTarget(this.fdmVariable).texture;
+
       this.gpuCompute.compute();
     }
     
@@ -812,8 +767,8 @@ class ChladniSimulator {
       const freq = this.actualAppliedFrequency || this.currentFrequency;
       const hue = THREE.MathUtils.clamp((Math.log10(Math.max(20, freq)) - Math.log10(20)) / (Math.log10(20000) - Math.log10(20) + 1e-9), 0, 1) * 0.7;
       uniforms.u_globalColor.value.setHSL(hue, 0.98, 0.58);
-      
       uniforms.u_activeParticleCount.value = this.enableDynamicParticleDensity ? this.ACTIVE_PARTICLE_COUNT : this.MAX_PARTICLE_COUNT;
+      uniforms.u_particleSize.value = this.VISUAL_PARTICLE_SIZE;
     }
     
     this._updateAudioProcessing();
@@ -985,7 +940,6 @@ class ChladniSimulator {
   _resetAllSettingsToDefaults(isAdvancedOnly = false) {
     const prevPC = this.MAX_PARTICLE_COUNT;
     const prevGS = this.GRID_SIZE;
-    const prevPS = this.VISUAL_PARTICLE_SIZE;
     
     Object.keys(this.defaultAdvancedSettings).forEach(k => this[k] = this.defaultAdvancedSettings[k]);
     this.GRID_SIZE = this._roundToOddInteger(this.defaultAdvancedSettings.GRID_SIZE);
@@ -1010,7 +964,7 @@ class ChladniSimulator {
       if (this.isMicrophoneEnabled) this._toggleMicrophoneInput();
       if (this.isDesktopAudioEnabled) this._toggleDesktopAudio();
       this._stopLoadedAudioFilePlayback(true);
-      if (this.isGeneratedSoundEnabled) this._toggleGeneratedSoundPlayback();
+      if (this.isGeneratedSoundEnabled) this._toggleGeneratedSoundPlayback(true);
       
       this._setActiveDrivingMechanism('modal');
     }
@@ -1018,7 +972,7 @@ class ChladniSimulator {
     if (prevPC !== this.MAX_PARTICLE_COUNT || prevGS !== this.GRID_SIZE) {
       this._reinitGPUSimulation();
     } else {
-      if (prevPS !== this.VISUAL_PARTICLE_SIZE) this._createParticleSystem();
+      this._createParticleSystem();
       this._resetFullSimulationState();
     }
     
@@ -1034,7 +988,7 @@ class ChladniSimulator {
     
     if (this[paramName] === newVal && !isCheckbox) return;
 
-    let needsGpuReinit = false, needsParticleSystemReinit = false;
+    let needsGpuReinit = false;
     
     if (paramName === 'GRID_SIZE') {
         const roundedVal = this._roundToOddInteger(newVal);
@@ -1045,14 +999,12 @@ class ChladniSimulator {
             this.ACTIVE_PARTICLE_COUNT = this.enableDynamicParticleDensity ? MIN_DYNAMIC_PARTICLE_COUNT : newVal;
             needsGpuReinit = true; 
         }
-    } else if (paramName === 'VISUAL_PARTICLE_SIZE') {
-        if (this.VISUAL_PARTICLE_SIZE !== newVal) { this.VISUAL_PARTICLE_SIZE = newVal; needsParticleSystemReinit = true; }
     } else {
         this[paramName] = newVal;
     }
 
     if (needsGpuReinit) this._reinitGPUSimulation();
-    else if (needsParticleSystemReinit) this._createParticleSystem();
+    else if (paramName === 'VISUAL_PARTICLE_SIZE') this._createParticleSystem();
     
     this._populateAdvancedControlsUI();
   }
@@ -1079,7 +1031,7 @@ class ChladniSimulator {
     setCtrl('advGridSize', this.GRID_SIZE, null, 0);
     setCtrl('advFDMSteps', this.FDM_STEPS_PER_FRAME, null, 0);
     setCtrl('advFDMDampingFactor', this.FDM_DAMPING_FACTOR, null, 6);
-    setCtrl('advParticleCount', this.MAX_PARTICLE_COUNT, 1, null);
+    setCtrl('advParticleCount', this.MAX_PARTICLE_COUNT, null, 0);
     setCtrl('advParticleForceBase', this.PARTICLE_FORCE_BASE, 1, null);
     setCtrl('advParticleDampingBase', this.PARTICLE_DAMPING_BASE, null, 3);
     setCtrl('advMaxParticleSpeed', this.MAX_PARTICLE_SPEED, null, 1);
@@ -1321,7 +1273,7 @@ class ChladniSimulator {
     await this._stopLoadedAudioFilePlayback(true);
     this.playlistFiles = Array.from(event.target.files);
     this.currentPlaylistIndex = -1;
-    if(this.uiElements.playUploadedAudioButton) this.uiElements.playUploadedAudioButton.style.display = 'block';
+    this._updateAudioFileUI();
   }
   
   async _loadAndPlayTrack(trackIndex) {
@@ -1360,7 +1312,11 @@ class ChladniSimulator {
   _prevTrack() { this._loadAndPlayTrack((this.currentPlaylistIndex - 1 + this.playlistFiles.length) % this.playlistFiles.length); }
 
   _stopLoadedAudioFilePlayback(fullReset = false) {
-    if (this.audioElement) this.audioElement.pause();
+    if (this.audioElement) {
+        this.audioElement.pause();
+        this.audioElement.removeAttribute('src'); 
+        this.audioElement.load();
+    }
     this.isAudioFilePlaying = false;
     this.isAudioFilePaused = false;
     if (this.drivingMechanism === 'audio') this._setActiveDrivingMechanism('modal');
@@ -1406,7 +1362,7 @@ class ChladniSimulator {
   _updateAudioFileProgressControlsUI() {
     if (!this.audioElement || !isFinite(this.audioFileDuration) || this.audioFileDuration === 0) return;
     const currentTime = this.audioElement.currentTime;
-    if (this.uiElements.audioProgressSlider) {
+    if (this.uiElements.audioProgressSlider && document.activeElement !== this.uiElements.audioProgressSlider) {
       this.uiElements.audioProgressSlider.value = (currentTime / this.audioFileDuration) * 100;
     }
     if (this.uiElements.audioTimeDisplay) {
@@ -1574,7 +1530,7 @@ async function main() {
     new ChladniSimulator(besselRootsData);
   } catch (error) {
     console.error("Critical boot error:", error);
-    document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center;"><h1>Критическая ошибка</h1><p>Не удалось загрузить необходимые для работы данные. Проверьте консоль.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
+    document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center; font-family: sans-serif;"><h1>Критическая ошибка</h1><p>Не удалось загрузить необходимые для работы данные. Проверьте консоль.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
   }
 }
 
