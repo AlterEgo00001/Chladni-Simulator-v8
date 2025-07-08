@@ -710,52 +710,49 @@ class ChladniSimulator {
       }
     }
     
-    this._updateAudioProcessing();
-    
-    if (this.mainAudioContext?.state === 'running' && this.simulationTime - this.lastBPMUpdateTime > 0.5) {
-      this._updateBPM();
-      this.lastBPMUpdateTime = this.simulationTime;
-    }
+    this._updateAudioProcessing(deltaTime);
     
     this.composer.render(deltaTime);
   }
 
-  _updateAudioProcessing() {
+  _updateAudioProcessing(deltaTime) {
     const isAudioActive = (this.drivingMechanism === 'audio' && this.isAudioFilePlaying && !this.isAudioFilePaused) ||
                           (this.drivingMechanism === 'microphone' && this.isMicrophoneEnabled) ||
                           (this.drivingMechanism === 'desktop_audio' && this.isDesktopAudioEnabled);
 
-    if (isAudioActive && this.pitchDetectorAnalyserNode && this.mainAudioContext?.state === 'running') {
-      const acTime = this.mainAudioContext.currentTime;
-      if (acTime - this.lastPitchUpdateTime > PITCH_UPDATE_INTERVAL_SECONDS) {
-        this.lastPitchUpdateTime = acTime;
-        if (this.pitchDetectorSignalBuffer) {
-          try {
-            this.pitchDetectorAnalyserNode.getFloatTimeDomainData(this.pitchDetectorSignalBuffer);
-            const detectedFreq = this._autoCorrelatePitch(this.pitchDetectorSignalBuffer, this.mainAudioContext.sampleRate);
-            if (detectedFreq !== -1) {
-              if (this.lastStablePitchFrequency === 0) this.lastStablePitchFrequency = detectedFreq;
-              this.lastStablePitchFrequency = THREE.MathUtils.lerp(this.lastStablePitchFrequency, detectedFreq, 0.3);
-              this.currentFrequency = detectedFreq;
-              if (this.uiElements.pitchDetectorInfo) {
-                this.uiElements.pitchDetectorInfo.style.display = 'block';
-                if (this.uiElements.pitch) this.uiElements.pitch.innerText = Math.round(detectedFreq);
-                let midi = Math.round(12 * (Math.log(detectedFreq / 440) / Math.log(2))) + 69;
-                if (this.uiElements.note) this.uiElements.note.innerText = NOTE_NAMES_SHARP[midi % 12];
-                let cents = Math.floor(1200 * Math.log(detectedFreq / (440 * Math.pow(2, (midi - 69) / 12))) / Math.log(2));
-                if (this.uiElements.detune_amt) this.uiElements.detune_amt.innerText = Math.abs(cents);
-                if (this.uiElements.detune) this.uiElements.detune.className = cents === 0 ? "" : (cents < 0 ? "flat" : "sharp");
+    if (isAudioActive && this.mainAudioContext?.state === 'running') {
+      if (this.pitchDetectorAnalyserNode) {
+        const acTime = this.mainAudioContext.currentTime;
+        if (acTime - this.lastPitchUpdateTime > PITCH_UPDATE_INTERVAL_SECONDS) {
+          this.lastPitchUpdateTime = acTime;
+          if (this.pitchDetectorSignalBuffer) {
+            try {
+              this.pitchDetectorAnalyserNode.getFloatTimeDomainData(this.pitchDetectorSignalBuffer);
+              const detectedFreq = this._autoCorrelatePitch(this.pitchDetectorSignalBuffer, this.mainAudioContext.sampleRate);
+              if (detectedFreq !== -1) {
+                if (this.lastStablePitchFrequency === 0) this.lastStablePitchFrequency = detectedFreq;
+                this.lastStablePitchFrequency = THREE.MathUtils.lerp(this.lastStablePitchFrequency, detectedFreq, 0.3);
+                this.currentFrequency = detectedFreq;
+                if (this.uiElements.pitchDetectorInfo) {
+                  this.uiElements.pitchDetectorInfo.style.display = 'block';
+                  if (this.uiElements.pitch) this.uiElements.pitch.innerText = Math.round(detectedFreq);
+                  let midi = Math.round(12 * (Math.log(detectedFreq / 440) / Math.log(2))) + 69;
+                  if (this.uiElements.note) this.uiElements.note.innerText = NOTE_NAMES_SHARP[midi % 12];
+                  let cents = Math.floor(1200 * Math.log(detectedFreq / (440 * Math.pow(2, (midi - 69) / 12))) / Math.log(2));
+                  if (this.uiElements.detune_amt) this.uiElements.detune_amt.innerText = Math.abs(cents);
+                  if (this.uiElements.detune) this.uiElements.detune.className = cents === 0 ? "" : (cents < 0 ? "flat" : "sharp");
+                }
+                this.smoothedPitchFrequency = THREE.MathUtils.lerp(this.smoothedPitchFrequency, detectedFreq, PITCH_SMOOTHING_FACTOR);
+                if (Math.abs(this.actualAppliedFrequency - this.smoothedPitchFrequency) > PITCH_CHANGE_THRESHOLD_HZ) {
+                  this.actualAppliedFrequency = this.smoothedPitchFrequency;
+                  this._resetFullSimulationState();
+                } else {
+                  this.actualAppliedFrequency = this.smoothedPitchFrequency;
+                }
+                this._updateFrequencyControlsUI();
               }
-              this.smoothedPitchFrequency = THREE.MathUtils.lerp(this.smoothedPitchFrequency, detectedFreq, PITCH_SMOOTHING_FACTOR);
-              if (Math.abs(this.actualAppliedFrequency - this.smoothedPitchFrequency) > PITCH_CHANGE_THRESHOLD_HZ) {
-                this.actualAppliedFrequency = this.smoothedPitchFrequency;
-                this._resetFullSimulationState();
-              } else {
-                this.actualAppliedFrequency = this.smoothedPitchFrequency;
-              }
-              this._updateFrequencyControlsUI();
-            }
-          } catch (e) {}
+            } catch (e) {}
+          }
         }
       }
 
@@ -771,6 +768,11 @@ class ChladniSimulator {
         if (this.onsetHistory.length > this.onsetHistoryMaxLength) {
           this.onsetHistory.shift();
         }
+      }
+      
+      if (this.simulationTime - this.lastBPMUpdateTime > 0.25) {
+        this._updateBPM(deltaTime);
+        this.lastBPMUpdateTime = this.simulationTime;
       }
     }
 
