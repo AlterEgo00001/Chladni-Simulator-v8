@@ -24,9 +24,9 @@ const FDM_FRAGMENT_SHADER = `
     vec2 sample_uv = uv + offset;
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
     if (length(sample_phys) > u_plateRadius) {
-      return texture(u_fdmTexture_read, uv - offset).r;
+      return texture2D(u_fdmTexture_read, uv - offset).r;
     }
-    return texture(u_fdmTexture_read, sample_uv).r;
+    return texture2D(u_fdmTexture_read, sample_uv).r;
   }
   void main() {
     vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_fdmTexture_read, 0));
@@ -37,7 +37,7 @@ const FDM_FRAGMENT_SHADER = `
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-    vec4 data = texture(u_fdmTexture_read, uv);
+    vec4 data = texture2D(u_fdmTexture_read, uv);
     float u_curr = data.r;
     float u_prev = data.g;
     float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
@@ -60,7 +60,7 @@ const FDM_FRAGMENT_SHADER = `
     float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
-      float modalPattern = texture(u_modalPatternTexture, uv).r;
+      float modalPattern = texture2D(u_modalPatternTexture, uv).r;
       excForce = u_excAmp * timeSine * modalPattern * cos(float(u_mParam) * theta);
     } else {
       vec2 centerUV = vec2(0.5, 0.5);
@@ -93,7 +93,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_stuckThreshold;
   void main() {
     vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_particleTexture_read, 0));
-    vec4 data = texture(u_particleTexture_read, uv);
+    vec4 data = texture2D(u_particleTexture_read, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
     if (pos.x > 900.0) {
@@ -101,10 +101,10 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       return;
     }
     vec2 normPos = pos / u_plateWidth + 0.5;
-    float disp = texture(u_displacementTexture, normPos).r;
+    float disp = texture2D(u_displacementTexture, normPos).r;
     vec2 texelSizeDisp = 1.0 / vec2(textureSize(u_displacementTexture, 0));
-    float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
-    float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
+    float gradX = (texture2D(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture2D(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
+    float gradY = (texture2D(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture2D(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
       vec2 texelSizeParticle = 1.0 / vec2(textureSize(u_particleTexture_read, 0));
@@ -113,7 +113,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       for (int i = 1; i <= checks; i++) {
         float angle = float(i) / float(checks) * 6.283185;
         vec2 neighborUV = uv + vec2(cos(angle), sin(angle)) * texelSizeParticle;
-        vec2 toNeighbor = texture(u_particleTexture_read, neighborUV).rg - pos;
+        vec2 toNeighbor = texture2D(u_particleTexture_read, neighborUV).rg - pos;
         float distSq = dot(toNeighbor, toNeighbor);
         if (distSq < u_repulsionRadius * u_repulsionRadius && distSq > 0.00001) {
           float dist = sqrt(distSq);
@@ -163,14 +163,14 @@ const PARTICLE_VERTEX_SHADER = `
       mod(instanceId, u_particleTexResolution.x) + 0.5,
       floor(instanceId / u_particleTexResolution.x) + 0.5
     ) / u_particleTexResolution;
-    vec4 data = texture(u_particleTexture, v_particleUV);
+    vec4 data = texture2D(u_particleTexture, v_particleUV);
     vec2 pos2D = data.rg;
     if (pos2D.x > 900.0) {
       gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
     vec2 normPos = pos2D / u_plateWidth + 0.5;
-    float disp = texture(u_displacementTexture, normPos).r;
+    float disp = texture2D(u_displacementTexture, normPos).r;
     float visHeight = clamp(disp * u_visScale, -u_maxVisAmp, u_maxVisAmp);
     float cosA = cos(u_rotationAngle);
     float sinA = sin(u_rotationAngle);
@@ -200,7 +200,7 @@ const PARTICLE_FRAGMENT_SHADER = `
   void main() {
     vec3 baseColor;
     if (u_colorMode > 0.5) {
-      vec2 vel = texture(u_particleTexture, v_particleUV).ba;
+      vec2 vel = texture2D(u_particleTexture, v_particleUV).ba;
       float speed = length(vel);
       float speedFactor = clamp(speed / u_maxSpeedForColor, 0.0, 1.0);
       baseColor = mix(u_coldColor, u_hotColor, speedFactor);
@@ -231,8 +231,8 @@ const E_MODULUS_DEFAULT = 200e9;
 const POISSON_RATIO_DEFAULT = 0.3;
 
 const GPU_GRID_SIZE_DEFAULT = 255;
-const GPU_FDM_STEPS_PER_FRAME_DEFAULT = 30;
-const GPU_PARTICLE_COUNT_DEFAULT = 65536;
+const GPU_FDM_STEPS_PER_FRAME_DEFAULT = 15;
+const GPU_PARTICLE_COUNT_DEFAULT = 16384;
 
 const PARTICLE_FORCE_BASE_DEFAULT = 2.5e6;
 const PARTICLE_DAMPING_BASE_DEFAULT = 0.96;
