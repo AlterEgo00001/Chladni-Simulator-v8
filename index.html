@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Симулятор узоров Хладни v8.0 (GPU Accelerated)</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="styles.css">
+    
+    <script src="./libs/jsmediatags.min.js"></script>
+    
+    <script async src="./libs/es-module-shims.js" crossorigin="anonymous"></script>
+    
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./libs/three/three.module.js",
+          "three/addons/": "./libs/three/addons/"
+        }
+      }
+    </script>
+</head>
+<body>
+    <div id="scene-container"></div>
+    <div id="subtitle-container"></div>
+
+    <button id="toggleLeftPanelButton" class="panel-toggle-button" data-lang-key="toggle_left_panel_show">Скрыть левую панель</button>
+    <button id="toggleRightPanelButton" class="panel-toggle-button" data-lang-key="toggle_right_panel_show">Скрыть правую панель</button>
+
+    <div id="controls" class="control-panel">
+        <fieldset>
+            <legend data-lang-key="legend_main_params">Основные параметры</legend>
+            <div class="control-group">
+                <label for="frequencySlider" data-lang-key="label_freq_slider">Частота (ползунок): <span id="freqValueText">273 Гц</span></label>
+                <input type="range" id="frequencySlider" min="0" max="100" value="45.3" step="0.1">
+            </div>
+            <div class="control-group">
+                <label for="frequencyInput" data-lang-key="label_freq_input">Частота (ввод Гц):</label>
+                <div class="input-group">
+                    <input type="number" id="frequencyInput" value="273" min="1" max="999999" step="1">
+                    <button id="setFrequencyButton" data-lang-key="btn_set">Установить</button>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="particleSpeedSlider" data-lang-key="label_sim_speed">Скорость симуляции: <span id="speedValueText">1.00x</span></label>
+                <input type="range" id="particleSpeedSlider" min="0" max="100" value="50" step="1">
+            </div>
+             <div class="control-group">
+                <label for="presetSelect" data-lang-key="label_presets">Предустановки (m,n для круга):</label>
+                <select id="presetSelect">
+                    <option value="none" selected data-lang-key="preset_custom">Свои m, n (сейчас: 0,1)</option>
+                    <option value="zvezda_lada" data-lang-key="preset_lada">Звезда Лады (4,2)</option>
+                    <option value="0,1">0,1 (Центр)</option><option value="1,1">1,1 (1 диам.)</option><option value="2,1">2,1 (2 диам.)</option><option value="0,2">0,2 (1 окр.)</option><option value="3,1">3,1 (3 диам.)</option><option value="5,1">5,1</option><option value="6,1">6,1</option><option value="1,2">1,2</option><option value="2,2">2,2</option><option value="3,2">3,2</option><option value="4,2">4,2 (Звезда Лады)</option><option value="0,3">0,3 (2 окр.)</option><option value="1,3">1,3</option><option value="2,3">2,3</option><option value="8,2">8,2</option><option value="10,3">10,3</option><option value="15,4">15,4</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <p data-lang-key="param_m">Мода m: <span id="mParamValueText">0</span></p>
+                <input type="range" id="mParamSlider" min="0" max="15" value="0" step="1">
+            </div>
+            <div class="control-group">
+                <p data-lang-key="param_n">Мода n: <span id="nParamValueText">1</span></p>
+                <input type="range" id="nParamSlider" min="1" max="10" value="1" step="1">
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_sim_controls">Управление симуляцией</legend>
+            <button id="toggleDesktopAudioButton" class="button-off" data-lang-key="btn_desktop_audio">Перехват звука: Выкл</button>
+            <button id="toggleSoundButton" class="button-off" data-lang-key="btn_sound">Звук: Выкл</button>
+            <button id="toggleFreezeButton" class="button-off" data-lang-key="btn_freeze">Частицы: Движ.</button>
+            <button id="toggleSubtitlesButton" class="button-off" data-lang-key="btn_subs">Субтитры: Выкл</button>
+            <button id="toggleShadowsButton" class="button-off" data-lang-key="btn_shadows">Тени: Выкл</button>
+            <button id="toggleColorBySpeedButton" class="button-off" data-lang-key="btn_color_by_speed">Цвет по скорости: Выкл</button>
+            <button id="toggleStuckParticleCullingButton" class="button-off" data-lang-key="btn_culling">Скрытие частиц: Вкл</button>
+            <button id="toggleDynamicDensityButton" class="button-off" data-lang-key="btn_dyn_density">Динам. плотность: Выкл</button>
+            <button id="resetSimulationButton" data-lang-key="btn_full_reset">ПОЛНЫЙ СБРОС</button>
+            <span id="activeModeDisplay" data-lang-key="mode_modal">Режим: Модальный</span>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_plate_rotation">Вращение пластины</legend>
+             <div class="control-group">
+                <label for="plateRotationSpeedSlider" data-lang-key="label_rotation_speed">Скорость вращения: <span id="plateRotationSpeedValue">0.00</span> об/сек</label>
+                <input type="range" id="plateRotationSpeedSlider" min="-2" max="2" value="0" step="0.01">
+            </div>
+            <button id="stopRotationButton" data-lang-key="btn_stop_rotation">Остановить вращение</button>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_audio_input">Аудиовход</legend>
+            <div class="control-group">
+                <label for="audioFileInput" data-lang-key="label_audio_file">Загрузить аудиофайл(ы):</label>
+                <input type="file" id="audioFileInput" accept="audio/*" multiple>
+            </div>
+            <button id="playUploadedAudioButton" style="display:none;" data-lang-key="btn_play_track">Воспр. трек/плейлист</button>
+            <button id="stopAudioButton" style="display:none;" data-lang-key="btn_stop_audio">Остановить аудио</button>
+            <button id="toggleAudioPauseButton" style="display:none;" data-lang-key="btn_pause">Пауза</button>
+            <div class="playlist-controls">
+                <button id="prevTrackButton" style="display:none;" data-lang-key="btn_prev_track">Пред. трек</button>
+                <button id="nextTrackButton" style="display:none;" data-lang-key="btn_next_track">След. трек</button>
+            </div>
+            <span id="audioInfoEl" data-lang-key="audio_info_none">Аудио не загружено</span>
+            <span id="lyricsInfoEl"></span>
+            <div style="margin-top: 15px; border-top: 1px solid #4a505c; padding-top: 10px;">
+                <button id="toggleMicrophoneButton" class="button-off" data-lang-key="btn_mic">Микрофон: Выкл</button>
+                <span id="microphoneInfoEl" style="display: block; font-size: 11px; color: #999; margin-top:5px;" data-lang-key="mic_info">Для использования микрофона может потребоваться разрешение браузера.</span>
+            </div>
+            <div class="control-group" style="margin-top: 15px;">
+                <label for="audioProgressSlider" style="display:none;" data-lang-key="label_audio_progress">Прогресс аудио:</label>
+                <input type="range" id="audioProgressSlider" min="0" max="100" value="0" style="display:none;">
+            </div>
+            <span id="audioTimeDisplay" style="display:none;">0:00 / 0:00</span>
+            <div id="pitchDetectorInfo" style="display:none; margin-top:10px;">
+                <span data-lang-key="pitch_detected">Определено:</span> <span id="pitch">--</span> Гц |
+                <span data-lang-key="pitch_note">Нота:</span> <span id="note">-</span> |
+                <span data-lang-key="pitch_detune">Отклонение:</span> <span id="detune_amt">--</span> <span id="detune"></span>
+            </div>
+             <div id="bpmInfo" style="display:none;">
+                BPM: <span id="bpmValue">--</span> (<span data-lang-key="bpm_confidence">Увер:</span> <span id="bpmConfidence">--</span>)
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_piano">Виртуальное Пианино</legend>
+            <div class="control-group">
+                <label for="pianoOctaveSelect" data-lang-key="label_octave">Октава:</label>
+                <select id="pianoOctaveSelect">
+                    <option value="2" data-lang-key="octave_2">Контроктава</option>
+                    <option value="3" data-lang-key="octave_3">Малая</option>
+                    <option value="4" selected data-lang-key="octave_4">Первая</option>
+                    <option value="5" data-lang-key="octave_5">Вторая</option>
+                    <option value="6" data-lang-key="octave_6">Третья</option>
+                </select>
+            </div>
+            <div id="pianoContainer"></div>
+            <span id="pianoStatus" data-lang-key="piano_inactive">Пианино неактивно</span>
+            <p id="pianoKeyboardHint" style="font-size:11px; color:#999; margin-top:5px;" data-lang-key="piano_hint">Клавиатура: Ср. ряд - белые, Верх. ряд - черные. Shift + Клавиша = Октава выше.</p>
+        </fieldset>
+        <p class="info-text">
+            <span data-lang-key="info_controls">
+                Удерживайте ЛКМ и двигайте для вращения камеры.<br>
+                Используйте Колесо Мыши для приближения/отдаления.
+            </span>
+            <br>
+            <span data-lang-key="info_version">Симулятор v8.0 (GPU Accelerated).</span>
+        </p>
+    </div>
+
+    <div id="advanced-controls" class="control-panel">
+        <h3 data-lang-key="adv_title">Продвинутые настройки</h3>
+        <fieldset>
+            <legend data-lang-key="legend_plate_physics">Физика пластины</legend>
+            <div class="control-group">
+                <label data-lang-key="adv_plate_thickness">Толщина (м): <span id="advPlateThicknessValue">0.0020</span></label>
+                <input type="range" id="advPlateThicknessSlider" min="0.0001" max="0.01" step="0.0001" value="0.002">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_plate_density">Плотность (кг/м³): <span id="advPlateDensityValue">7850</span></label>
+                <input type="range" id="advPlateDensitySlider" min="1000" max="12000" step="50" value="7850">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_emodulus">Модуль Юнга (Па): <span id="advEModulusValue">2.00e+11</span></label>
+                <input type="range" id="advEModulusSlider" min="10e9" max="400e9" step="1e9" value="200e9">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_poisson">Коэф. Пуассона: <span id="advPoissonRatioValue">0.30</span></label>
+                <input type="range" id="advPoissonRatioSlider" min="0.1" max="0.49" step="0.01" value="0.3">
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_fdm_settings">Настройки FDM (GPU)</legend>
+            <div class="control-group">
+                <label data-lang-key="adv_grid_size">Размер сетки: <span id="advGridSizeValue">121</span></label>
+                <input type="range" id="advGridSizeSlider" min="31" max="511" step="2" value="121">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_fdm_steps">Шагов FDM/кадр: <span id="advFDMStepsValue">20</span></label>
+                <input type="range"id="advFDMStepsSlider" min="1" max="100" step="1" value="20">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_damping_factor">Фактор затухания FDM: <span id="advFDMDampingFactorValue">0.000050</span></label>
+                <input type="range" id="advFDMDampingFactorSlider" min="0.00000" max="0.001" step="0.000001" value="0.00005">
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_particle_dynamics">Динамика частиц (GPU)</legend>
+            <div class="control-group">
+                <label data-lang-key="adv_particle_count">Кол-во частиц: <span id="advParticleCountValue">50000</span></label>
+                <input type="range" id="advParticleCountSlider" min="1000" max="250000" step="1000" value="50000">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_force_multiplier">Множитель силы: <span id="advParticleForceBaseValue">1.5e+6</span></label>
+                <input type="range" id="advParticleForceBaseSlider" min="1e4" max="5e7" step="1e4" value="1.5e6">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_damping_base">Демпфирование: <span id="advParticleDampingBaseValue">0.920</span></label>
+                <input type="range" id="advParticleDampingBaseSlider" min="0.800" max="0.999" step="0.001" value="0.92">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_max_speed">Макс. скорость частиц: <span id="advMaxParticleSpeedValue">18.0</span></label>
+                <input type="range" id="advMaxParticleSpeedSlider" min="1" max="50" step="0.5" value="18">
+            </div>
+             <div class="control-group">
+                <label><input type="checkbox" id="advEnableRepulsion" checked> <span data-lang-key="adv_enable_repulsion">Вкл. отталкивание частиц</span></label>
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_repulsion_radius">Радиус отталкивания: <span id="advRepulsionRadiusValue">0.150</span></label>
+                <input type="range" id="advRepulsionRadiusSlider" min="0.01" max="0.5" step="0.005" value="0.15">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_repulsion_strength">Сила отталкивания: <span id="advRepulsionStrengthValue">0.0050</span></label>
+                <input type="range" id="advRepulsionStrengthSlider" min="0.0001" max="0.1" step="0.0001" value="0.005">
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_excitation_amp">Амплитуда возбуждения</legend>
+             <div class="control-group">
+                <label data-lang-key="adv_base_amp">Базовая амплитуда: <span id="advExcBaseAmpValue">2.0e+4</span></label>
+                <input type="range" id="advExcBaseAmpSlider" min="1e2" max="1e5" step="1e2" value="20000">
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend data-lang-key="legend_particle_viz">Визуализация частиц</legend>
+            <div class="control-group">
+                <label data-lang-key="adv_particle_size">Размер частиц: <span id="advParticleSizeValue">0.040</span></label>
+                <input type="range" id="advParticleSizeSlider" min="0.005" max="0.1" step="0.001" value="0.04">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_deform_scale">Масштаб "прыжка": <span id="advVisDeformScaleValue">50.0</span></label>
+                <input type="range" id="advVisDeformScaleSlider" min="0" max="200" step="1" value="50">
+            </div>
+            <div class="control-group">
+                <label data-lang-key="adv_max_amp">Макс. "прыжок": <span id="advMaxVisAmplitudeValue">0.30</span></label>
+                <input type="range" id="advMaxVisAmplitudeSlider" min="0.01" max="2.0" step="0.01" value="0.3">
+            </div>
+        </fieldset>
+        <button id="resetAdvancedButton" data-lang-key="btn_reset_adv">Сбросить продвинутые настройки</button>
+    </div>
+
+    <script src="./libs/bessel.js"></script>
+    <script type="module" src="chladni.js"></script>
+</body>
+</html>

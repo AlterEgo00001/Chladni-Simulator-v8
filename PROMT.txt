@@ -1,0 +1,242 @@
+
+---
+
+### **[SECTION 1: CORE PHILOSOPHY & PROJECT DIRECTIVES]**
+
+**1.1. Project Title:** Интерактивный Симулятор Узоров Хладни v7.3.55
+
+**1.2. Core Philosophy (The "Why"):**
+This is not merely a visualizer; it is an educational and exploratory tool. Every architectural decision must serve these three core principles:
+
+1.  **Automation & Zero-Friction Experience:** The user is an explorer, not an operator. The system must proactively perform complex tasks (metadata extraction, subtitle search) in the background without user intervention. The user's journey from loading a file to seeing a result must be seamless.
+2.  **Graceful Degradation & Unbreakable Resilience:** The application must **never** enter a broken state. If a high-level feature (e.g., `Web Audio API` decoding) fails, the system must transparently and automatically fall back to a lower-level, guaranteed-to-work alternative (e.g., standard HTML5 `<audio>` element). The user should be informed of the fallback, but their experience must not be interrupted. This applies to all modules, from audio processing to mathematical calculations.
+3.  **Performance as a Non-Negotiable Requirement:** The main animation loop is sacred. Any computation within `_animateScene` must be ruthlessly optimized. This includes using efficient algorithms (binary search over linear search), respecting the frame budget (capping `deltaTime`), and avoiding unnecessary calculations. The simulation must feel fluid and responsive, even under load.
+
+**1.3. Target Audience:**
+*   **Students & Educators:** As an interactive tool for demonstrating concepts in wave mechanics, resonance, and modal analysis.
+*   **Physics & Music Enthusiasts:** As an exploratory sandbox for investigating the relationship between frequency, geometry, and patterns.
+*   **Developers & DSP Hobbyists:** As a case study in real-time signal processing and physics simulation in the browser.
+
+**1.4. Technology Stack (Final, Self-Hosted):**
+*   **Core:** HTML5, CSS3, Vanilla JavaScript (ES Modules).
+*   **3D Graphics:** `three.js` (v0.152.0) + `OrbitControls.js` (loaded locally).
+*   **Mathematical Engine:** `Bessel.js` (for reference/fallback) and pre-calculated JSON data.
+*   **Audio API:** `Web Audio API` (primary path), HTML5 `<audio>` (fallback path).
+*   **Metadata:** `jsmediatags` (v3.9.5, loaded locally).
+*   **Polyfills:** `es-module-shims.js` (for `importmap` support).
+
+---
+
+### **[SECTION 2: USER INTERFACE & EXPERIENCE (HTML & CSS)]**
+
+**2.1. File Structure (Final):**
+The project must be structured for self-hosted deployment (e.g., on GitHub Pages).
+
+```
+/
+├── index.html
+├── styles.css
+├── chladni.js
+├── bessel.py          # (Generation script, not part of deployment)
+├── README.md
+│
+├── data/
+│   └── bessel_roots.json
+│
+├── libs/
+│   ├── three/
+│   │   ├── three.module.js
+│   │   └── addons/
+│   │       └── controls/
+│   │           └── OrbitControls.js
+│   ├── bessel.js
+│   ├── es-module-shims.js
+│   └── jsmediatags.min.js
+│
+└── img/
+    ├── 111.png
+    └── 222.jpg
+```
+
+**2.2. `index.html` Specification:**
+
+*   **Document Type:** HTML5 (`<!DOCTYPE html>`).
+*   **`<head>` Section:**
+    *   **Meta Tags:** `UTF-8` charset, standard `viewport`.
+    *   **Title:** Must be "Симулятор узоров Хладни v7.3.55 (Интерактивное Обучение)".
+    *   **Stylesheets:** Link to `./styles.css`.
+    *   **Script Loading Order (CRITICAL):**
+        1.  `./libs/jsmediatags.min.js` (Standard script tag).
+        2.  `./libs/es-module-shims.js` (Async script tag for `importmap` polyfill).
+        3.  `<script type="importmap">`: Must map `three` and `three/addons/` to their local paths in the `/libs/` directory.
+*   **`<body>` Section:**
+    *   **DOM Element Structure:** The body must contain the following elements with the specified IDs and classes, as they are hard-coded into the JavaScript logic.
+    *   `#scene-container`: Full-screen `div` for the `three.js` canvas.
+    *   `#subtitle-container`: Centered `div` at the bottom for lyrics.
+    *   `#tooltip`: Hidden `div` for dynamic tooltips.
+    *   **Overlays & Modals:**
+        *   `#welcome-overlay` & `#prompt-overlay`: Full-screen overlays.
+        *   `#welcome-modal` & `#prompt-modal`: Window elements within overlays.
+    *   **Control Panels & Toggles:**
+        *   `#toggleLeftPanelButton`, `#toggleRightPanelButton`: Buttons to control panel visibility.
+        *   `#controls`: The main control panel (left).
+        *   `#advanced-controls`: The advanced settings panel (right).
+    *   **Panel Content (`<fieldset>` & `<legend>`):**
+        *   Panels must be structured with `<fieldset>` for logical grouping.
+        *   **Main Controls (`#controls`):**
+            *   **Основные параметры:** Frequency controls (slider, input), simulation speed, presets `(m, n)`.
+            *   **Управление симуляцией:** All toggle buttons must be present with their exact IDs (`#toggleDesktopAudioButton`, `#toggleSoundButton`, `#toggleFreezeButton`, etc.). The order must be: **Перехват звука**, Звук, Частицы, Субтитры, Тени, ...
+            *   **Аудиовход:** File input, play/stop/pause buttons, playlist controls, mic button, progress slider, and info spans (`#audioInfoEl`, `#pitchDetectorInfo`, `#bpmInfo`).
+            *   **Виртуальное Пианино:** Octave selector, `#pianoContainer` div, status/hint text.
+        *   **Advanced Controls (`#advanced-controls`):** All sliders and inputs for detailed physics/particle tuning must be present with their exact IDs (`#advPlateThickness`, `#advParticleCount`, etc.).
+    *   **Final Script Loading:**
+        1.  `./libs/bessel.js` (Standard script tag, for fallback math).
+        2.  `./chladni.js` (Crucially, must be `type="module"` to respect the `importmap` and run after DOM parsing).
+
+**2.3. `styles.css` Specification & Philosophy:**
+
+*   **Theme:** Dark, non-distracting. The primary focus is the 3D visualization. Colors should be functional (`#61afef` for interactive elements, `#98c379` for "on" state, `#e06c75` for "off" state).
+*   **Layout & Stacking Context (`z-index`):** Implement the precise `z-index` hierarchy to ensure correct layering:
+    *   `#scene-container`: `z-index: 1` (background).
+    *   `#subtitle-container`: `z-index: 40`.
+    *   `.control-panel`: `z-index: 50`.
+    *   `.panel-toggle-button`: `z-index: 100`.
+    *   `#tooltip` & Overlays: `z-index > 1000`.
+*   **Panel Animation:** Panel hiding/showing **must not** use `display: none`. It must be implemented with `transform: translateX(...)`, `opacity`, and `pointer-events: none` for smooth, hardware-accelerated transitions.
+*   **Responsiveness:** Basic responsiveness should be handled to ensure usability on smaller screens, primarily by allowing the control panels to scroll (`overflow-y: auto`).
+
+---
+
+### **[SECTION 3: JAVASCRIPT ARCHITECTURE (`chladni.js`)]**
+
+**3.1. Global Constants & Configuration:**
+All "magic numbers" must be defined as constants at the top of the file for easy tuning. Provide rationale for each default value.
+
+```javascript
+// [PHYSICS & SIMULATION]
+const PLATE_RADIUS_DEFAULT = 7.5;             // RATIONALE: A good default size for visualization.
+const PLATE_THICKNESS_DEFAULT = 0.002;        // RATIONALE: Represents a standard steel plate.
+const PLATE_DENSITY_DEFAULT = 7850;           // RATIONALE: Density of steel in kg/m³.
+const E_MODULUS_DEFAULT = 200e9;              // RATIONALE: Young's Modulus for steel in Pa.
+const POISSON_RATIO_DEFAULT = 0.3;            // RATIONALE: Poisson's ratio for steel.
+const PARTICLE_COUNT_DEFAULT = 9000;          // RATIONALE: Balance between visual density and performance.
+const PARTICLE_FORCE_BASE_DEFAULT = 1.5e6;    // RATIONALE: Empirically tuned force multiplier for energetic particle movement.
+const PARTICLE_DAMPING_BASE_DEFAULT = 0.95;   // RATIONALE: High value for low friction, allowing particles to settle in nodal lines smoothly.
+// ... (Include ALL other constants with similar rationale) ...
+
+// [FDM NUMERICAL SOLVER]
+const MIN_GRID_SIZE_DEFAULT = 33;             // RATIONALE: Must be odd. Minimum grid for low-frequency, low-detail simulation.
+const MAX_GRID_SIZE_DEFAULT = 151;            // RATIONALE: Must be odd. Max grid for high-frequency, high-detail simulation. A performance cap.
+const FDM_STABILITY_FACTOR_DEFAULT = 0.08;    // RATIONALE: Key parameter for the Courant-Friedrichs-Lewy (CFL) condition. A conservative value for stability.
+// ... etc ...
+
+// [AUDIO ANALYSIS]
+const PITCH_UPDATE_INTERVAL_SECONDS = 0.03;   // RATIONALE: ~33Hz update rate, a good trade-off between responsiveness and performance.
+// ... etc ...
+```
+
+**3.2. Class `ChladniSimulator` - The Core Engine:**
+
+The entire application logic must be encapsulated within this class.
+
+*   **`constructor(besselRootsTable)`:**
+    *   **CRITICAL:** The constructor must accept the pre-loaded `besselRootsTable` object as an argument.
+    *   Initialize all class properties to their default values from the constants.
+    *   Store the passed `besselRootsTable` in `this.besselRootsTable`.
+    *   The final call in the constructor must be `this._mainInitialization()`.
+
+*   **`_mainInitialization()`:**
+    *   This method orchestrates the entire startup sequence. The order of calls is crucial.
+    1.  `_mapUIElements()`: Cache all necessary DOM elements into `this.uiElements`.
+    2.  `_setupUX()`: Initialize localization, tooltips, and modals.
+    3.  `_storeDefaultSimulationSettings()`: Store default values for the "Reset" buttons.
+    4.  `_setupThreeJSScene()`: Create the `three.js` scene, camera, renderer, lights.
+    5.  `_setupWebAudioSystem()`: Initialize `AudioContext` and all analyzer nodes.
+    6.  `_createParticleSystem()`: Create the instanced mesh for particles.
+    7.  `_createPianoKeys()`: Generate the piano UI.
+    8.  `_setupEventListeners()`: Attach all event listeners to UI elements.
+    9.  `_resetAllSettingsToDefaults(false)`: Perform an initial full reset to set the simulation to a known state.
+    10. `this.animationClock.start()`: Start the main clock.
+    11. `this._animateScene()`: Begin the main animation loop.
+
+**3.3. Method Implementation Details (By Block):**
+
+#### **3.3.1. Physics & Simulation Core**
+
+*   **`_updatePhysicalConstants()`:** Must calculate `D_FLEXURAL_RIGIDITY` and `RHO_H_PLATE_SPECIFIC_DENSITY` based on the current physical parameters.
+*   **`_getResonantFrequencyKirchhoff(m, n)`:**
+    1.  Call `_getBesselZero(m, n)` to get the mathematical constant `λ_mn`.
+    2.  Use the Kirchhoff-Love plate theory formula to calculate the physical frequency in Hz.
+*   **`_initializeFDMArraysAndBuffers()`:**
+    1.  Determine the optimal grid size for the current frequency using `_getOptimalGridSizeForFrequency()`.
+    2.  Calculate `dx`, `dy`, and the simulation time step `dt_simulation_step` based on the CFL condition and the `FDM_STABILITY_FACTOR`.
+    3.  Initialize the 2D arrays `u_curr_cpu_array2D`, `u_prev_cpu_array2D`, etc., with the correct dimensions and fill with zeros.
+*   **`_updatePlateFDM_CPU(deltaTime)`:**
+    1.  Calculate the number of sub-steps needed for the given `deltaTime`.
+    2.  Implement the nested `for` loops (`step`, `i`, `j`).
+    3.  Inside the loops, calculate the **biharmonic operator** using the 13-point finite difference stencil.
+    4.  Calculate the driving force based on the current `drivingMechanism`.
+    5.  Update the next state `u_next` using the explicit time-stepping formula.
+    6.  Apply the damping factor.
+    7.  Swap the array pointers (`u_prev` -> `u_curr`, `u_curr` -> `u_next`) for the next iteration.
+*   **`_updateParticles(deltaTime)`:**
+    1.  Loop through each particle.
+    2.  Convert particle's world coordinates (x, z) to grid indices (r, c).
+    3.  Get the displacement `d` at the particle's position by interpolating from the FDM grid (`_getDisplacementFromCPUField`).
+    4.  Get the gradient `grad` of the displacement field (`_getGradientFromCPUField`).
+    5.  Calculate the force `F = -d * grad`. This is the core mechanism that pushes particles from high-displacement areas (antinodes) to low-displacement areas (nodes).
+    6.  (Optional) Add repulsion force by checking a limited number of neighbors.
+    7.  Update the particle's velocity and position using Euler integration.
+    8.  Handle boundary collisions with the edge of the plate.
+    9.  Update the particle's `y` position for visual "jumping" (`visHeight`).
+    10. Update the `instanceMatrix` for the particle.
+    11. Finally, set `this.particlesMesh.instanceMatrix.needsUpdate = true;`.
+
+#### **3.3.2. Audio & Signal Processing**
+
+*   **`_toggleDesktopAudio()`:**
+    1.  **Guard Clause:** Check if `navigator.mediaDevices.getDisplayMedia` exists.
+    2.  **State Machine:** If `this.isDesktopAudioEnabled` is true, stop all tracks on `this.desktopStream`, disconnect the audio node, and clean up.
+    3.  **Activation:** If false, first stop all other audio sources (`_toggleMicrophoneInput`, `_stopLoadedAudioFilePlayback`).
+    4.  Call `await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })`.
+    5.  **CRITICAL CHECK:** After getting the stream, check `stream.getAudioTracks().length`. If it's 0, alert the user they forgot to share audio and immediately stop the stream tracks.
+    6.  If an audio track exists, create a `MediaStreamSourceNode`, connect it to the analyzers (`pitchDetectorAnalyserNode`, `fftAnalyserNode`), and set the `drivingMechanism`.
+    7.  Attach an `.onended` event handler to the audio track to automatically call this function again for cleanup if the user stops sharing via the browser's native UI.
+*   **`_autoCorrelatePitch(buffer, sampleRate)`:**
+    1.  Calculate Root Mean Square (RMS) to check if the signal is loud enough to be processed.
+    2.  Calculate the autocorrelation function of the input `buffer`.
+    3.  Find all peaks in the autocorrelation result.
+    4.  Score and select the best peak, preferring clarity, stability (closeness to the last known pitch), and harmonic correctness over raw amplitude.
+    5.  Use parabolic interpolation on the samples around the best peak to find a more precise, floating-point lag value.
+    6.  Return `sampleRate / final_lag`.
+*   **`_findAndLoadLyrics(file, fetchID)`:**
+    1.  Implement the **cascading search logic**:
+        a. Try to read ID3 tags using `jsmediatags`.
+        b. If `USLT` (lyrics) tag exists, parse it and return.
+        c. If `artist` and `title` tags exist, use them for the next step.
+        d. If no tags, parse the filename to guess artist/title.
+        e. If artist/title are known, call `_fetchLyricsFromLrclib`.
+    2.  **Race Condition Prevention:** Check `fetchID === this.activeFetchID` after every `await` call to abort if a new track has been selected.
+
+#### **3.3.3. Application Entry Point & Data Loading**
+
+*   The global scope of the file must not directly execute code. Instead, it should define an `async function main()`.
+*   **`async function main()`:**
+    1.  Use a `try...catch` block for robust error handling.
+    2.  Inside the `try`, `await fetch('./data/bessel_roots.json')`.
+    3.  Check if `response.ok`.
+    4.  `await response.json()` to get the data.
+    5.  **Only then**, create the main class instance: `new ChladniSimulator(besselRootsData)`.
+    6.  The `catch` block should display a user-friendly error message on the page.
+*   The file must end with the standard DOM-ready check that calls `main()`.
+
+```javascript
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', main);
+} else {
+    main();
+}
+```
+
+---
+### **[END OF PROMPT]**
