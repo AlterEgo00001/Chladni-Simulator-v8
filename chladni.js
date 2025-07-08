@@ -7,7 +7,6 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
 const FDM_FRAGMENT_SHADER = `
   #define PI 3.141592653589793
-  uniform sampler2D u_fdmTexture_read;
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -20,26 +19,31 @@ const FDM_FRAGMENT_SHADER = `
   uniform float u_plateRadius;
   uniform int u_mParam;
   uniform int u_excMode;
+
   float sample_boundary(vec2 uv, vec2 offset) {
     vec2 sample_uv = uv + offset;
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
     if (length(sample_phys) > u_plateRadius) {
-      return texture2D(u_fdmTexture_read, uv - offset).r;
+      return texture2D(textureFDM, uv - offset).r;
     }
-    return texture2D(u_fdmTexture_read, sample_uv).r;
+    return texture2D(textureFDM, sample_uv).r;
   }
+
   void main() {
-    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_fdmTexture_read, 0));
-    vec2 texelSize = 1.0 / vec2(textureSize(u_fdmTexture_read, 0));
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(textureFDM, 0));
+    vec2 texelSize = 1.0 / vec2(textureSize(textureFDM, 0));
+
     float physX = (uv.x - 0.5) * u_plateRadius * 2.0;
     float physY = (uv.y - 0.5) * u_plateRadius * 2.0;
     if (length(vec2(physX, physY)) > u_plateRadius) {
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-    vec4 data = texture2D(u_fdmTexture_read, uv);
+
+    vec4 data = texture2D(textureFDM, uv);
     float u_curr = data.r;
     float u_prev = data.g;
+
     float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
     float u_ip1j = sample_boundary(uv, vec2(0.0, texelSize.y));
     float u_im1j = sample_boundary(uv, vec2(0.0, -texelSize.y));
@@ -53,9 +57,11 @@ const FDM_FRAGMENT_SHADER = `
     float u_im2j = sample_boundary(uv, vec2(0.0, -2.0 * texelSize.y));
     float u_ijp2 = sample_boundary(uv, vec2(2.0 * texelSize.x, 0.0));
     float u_ijm2 = sample_boundary(uv, vec2(-2.0 * texelSize.x, 0.0));
+
     float biharmonic = (20.0 * u_curr - 8.0 * (u_ip1j + u_im1j + u_ijp1 + u_ijm1) +
                        2.0 * (u_ip1jp1 + u_ip1jm1 + u_im1jp1 + u_im1jm1) +
                        (u_ip2j + u_im2j + u_ijp2 + u_ijm2)) * inv_dx4;
+
     float excForce = 0.0;
     float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
@@ -69,16 +75,17 @@ const FDM_FRAGMENT_SHADER = `
         excForce = u_excAmp * timeSine * exp(-distSq / 0.001);
       }
     }
+
     float K_coeff = (u_dt * u_dt * u_D_flexural) / u_rho_h;
     float F_coeff = (u_dt * u_dt) / u_rho_h;
     float u_next = (2.0 * u_curr - u_prev) - K_coeff * biharmonic + F_coeff * excForce;
     u_next *= (1.0 - u_damp);
+
     gl_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
   }
 `;
 
 const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
-  uniform sampler2D u_particleTexture_read;
   uniform sampler2D u_displacementTexture;
   uniform float u_plateRadius;
   uniform float u_plateWidth;
@@ -92,8 +99,8 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_repulsionStrength;
   uniform float u_stuckThreshold;
   void main() {
-    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_particleTexture_read, 0));
-    vec4 data = texture2D(u_particleTexture_read, uv);
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(textureParticles, 0));
+    vec4 data = texture2D(textureParticles, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
     if (pos.x > 900.0) {
@@ -107,13 +114,13 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
     float gradY = (texture2D(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture2D(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
-      vec2 texelSizeParticle = 1.0 / vec2(textureSize(u_particleTexture_read, 0));
+      vec2 texelSizeParticle = 1.0 / vec2(textureSize(textureParticles, 0));
       vec2 repulsionForce = vec2(0.0);
       const int checks = 4;
       for (int i = 1; i <= checks; i++) {
         float angle = float(i) / float(checks) * 6.283185;
         vec2 neighborUV = uv + vec2(cos(angle), sin(angle)) * texelSizeParticle;
-        vec2 toNeighbor = texture2D(u_particleTexture_read, neighborUV).rg - pos;
+        vec2 toNeighbor = texture2D(textureParticles, neighborUV).rg - pos;
         float distSq = dot(toNeighbor, toNeighbor);
         if (distSq < u_repulsionRadius * u_repulsionRadius && distSq > 0.00001) {
           float dist = sqrt(distSq);
@@ -140,8 +147,6 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 
 const PARTICLE_VERTEX_SHADER = `
   attribute float instanceId;
-  uniform mat4 modelViewMatrix;
-  uniform mat4 projectionMatrix;
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -481,12 +486,12 @@ class ChladniSimulator {
     
     const fdmTexture = this.gpuCompute.createTexture();
     this._fillFDMTexture(fdmTexture, fdmTexSize);
-    this.fdmVariable = this.gpuCompute.addVariable("u_fdmTexture_read", FDM_FRAGMENT_SHADER, fdmTexture);
+    this.fdmVariable = this.gpuCompute.addVariable("textureFDM", FDM_FRAGMENT_SHADER, fdmTexture);
     if (!this.fdmVariable) throw new Error("Failed to create FDM GPGPU variable. Check FDM shader for errors.");
     
     const particleTexture = this.gpuCompute.createTexture();
     this._fillParticleTexture(particleTexture);
-    this.particleVariable = this.gpuCompute.addVariable("u_particleTexture_read", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
+    this.particleVariable = this.gpuCompute.addVariable("textureParticles", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
     if (!this.particleVariable) throw new Error("Failed to create Particle GPGPU variable. Check Particle Physics shader for errors.");
 
     this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable]);
