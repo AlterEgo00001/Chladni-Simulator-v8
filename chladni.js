@@ -5,7 +5,6 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-
 const LANG_PACK = {
   ru: {
     lang_toggle: "Switch to English",
@@ -329,6 +328,10 @@ class ChladniSimulator {
     this._setupWebAudioSystem();
     
     await this._loadShadersAndSetupGPUSimulation();
+    if (!this.gpuCompute) {
+      document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px;"><h1>Критическая ошибка</h1><p>Не удалось инициализировать GPU-симуляцию. Проверьте поддержку WebGL2 в вашем браузере или ошибки в консоли.</p></div>`;
+      return;
+    }
 
     this._createParticleSystem();
     this._createPianoKeys();
@@ -374,17 +377,18 @@ class ChladniSimulator {
       this._setupGPUSimulation();
 
     } catch (error) {
-      document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px;"><h1>Ошибка загрузки шейдеров</h1><p>Не удалось загрузить GLSL файлы. Проверьте консоль.</p></div>`;
+      console.error("Shader loading error:", error);
     }
   }
 
   _setupGPUSimulation() {
-    const particleTexSize = Math.ceil(Math.sqrt(this.MAX_PARTICLE_COUNT));
-    this.gpuCompute = new GPUComputationRenderer(particleTexSize, particleTexSize, this.renderer);
     if (!this.renderer.capabilities.isWebGL2 && !this.renderer.extensions.get('OES_texture_float')) {
-      alert("Ошибка: Ваш браузер не поддерживает float-текстуры, необходимые для GPU симуляции.");
+      console.error("Fatal Error: Your browser does not support float textures. GPU simulation cannot be initialized.");
       return;
     }
+    
+    const particleTexSize = Math.ceil(Math.sqrt(this.MAX_PARTICLE_COUNT));
+    this.gpuCompute = new GPUComputationRenderer(particleTexSize, particleTexSize, this.renderer);
     
     const fdmTexture = this.gpuCompute.createTexture();
     this._fillFDMTexture(fdmTexture);
