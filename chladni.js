@@ -489,7 +489,7 @@ class ChladniSimulator {
     this.particleVariable = this.gpuCompute.addVariable("u_particleTexture_read", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
     if (!this.particleVariable) throw new Error("Failed to create Particle GPGPU variable. Check Particle Physics shader for errors.");
 
-    this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable, this.particleVariable]);
+    this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable]);
     this.gpuCompute.setVariableDependencies(this.particleVariable, [this.particleVariable, this.fdmVariable]);
     
     this.fdmVariable.material.uniforms['u_modalPatternTexture'] = { value: null };
@@ -629,7 +629,15 @@ class ChladniSimulator {
     bloomPass.threshold = 0.1;
     bloomPass.strength = 0.3;
     bloomPass.radius = 0.3;
-    this.composer = new EffectComposer(this.renderer);
+    
+    const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+        type: THREE.HalfFloatType,
+        format: THREE.RGBAFormat,
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+    });
+    
+    this.composer = new EffectComposer(this.renderer, renderTarget);
     this.composer.addPass(renderScene);
     this.composer.addPass(bloomPass);
   }
@@ -753,9 +761,9 @@ class ChladniSimulator {
       this.particleVariable.material.uniforms.u_repulsionStrength.value = this.PARTICLE_REPULSION_STRENGTH;
       this.particleVariable.material.uniforms.u_stuckThreshold.value = this.enableStuckParticleCulling ? this.STUCK_PARTICLE_THRESHOLD : -1.0;
       
-      this.particleVariable.material.uniforms.u_displacementTexture.value = this.gpuCompute.getCurrentRenderTarget(this.fdmVariable).texture;
-
       this.gpuCompute.compute();
+      
+      this.particleVariable.material.uniforms.u_displacementTexture.value = this.gpuCompute.getCurrentRenderTarget(this.fdmVariable).texture;
     }
     
     if (this.particleMeshMaterial) {
