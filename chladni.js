@@ -5,6 +5,264 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
+const FDM_FRAGMENT_SHADER = `
+  #define PI 3.141592653589793
+
+  uniform sampler2D uTexture;
+  uniform sampler2D modalPatternTexture;
+  uniform vec2 resolution;
+  uniform float dx;
+  uniform float dt;
+  uniform float D_flexural;
+  uniform float rho_h;
+  uniform float freq;
+  uniform float damp;
+  uniform float excAmp;
+  uniform float time;
+  uniform float plateRadius;
+  uniform int mParam;
+  uniform int excMode;
+
+  float sample_boundary(vec2 uv, vec2 offset) {
+    vec2 sample_uv = uv + offset;
+    vec2 sample_phys = (sample_uv - 0.5) * plateRadius * 2.0;
+    if (length(sample_phys) > plateRadius) {
+      return texture2D(uTexture, uv - offset).r;
+    }
+    return texture2D(uTexture, sample_uv).r;
+  }
+
+  void main() {
+    vec2 uv = gl_FragCoord.xy / resolution;
+    vec2 texelSize = 1.0 / resolution;
+
+    float physX = (uv.x - 0.5) * plateRadius * 2.0;
+    float physY = (uv.y - 0.5) * plateRadius * 2.0;
+    if (length(vec2(physX, physY)) > plateRadius) {
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+      return;
+    }
+
+    vec4 data = texture2D(uTexture, uv);
+    float u_curr = data.r;
+    float u_prev = data.g;
+
+    float inv_dx4 = 1.0 / (dx * dx * dx * dx);
+    float u_ip1j = sample_boundary(uv, vec2(0.0, texelSize.y));
+    float u_im1j = sample_boundary(uv, vec2(0.0, -texelSize.y));
+    float u_ijp1 = sample_boundary(uv, vec2(texelSize.x, 0.0));
+    float u_ijm1 = sample_boundary(uv, vec2(-texelSize.x, 0.0));
+    float u_ip1jp1 = sample_boundary(uv, vec2(texelSize.x, texelSize.y));
+    float u_ip1jm1 = sample_boundary(uv, vec2(texelSize.x, -texelSize.y));
+    float u_im1jp1 = sample_boundary(uv, vec2(-texelSize.x, texelSize.y));
+    float u_im1jm1 = sample_boundary(uv, vec2(-texelSize.x, -texelSize.y));
+    float u_ip2j = sample_boundary(uv, vec2(0.0, 2.0 * texelSize.y));
+    float u_im2j = sample_boundary(uv, vec2(0.0, -2.0 * texelSize.y));
+    float u_ijp2 = sample_boundary(uv, vec2(2.0 * texelSize.x, 0.0));
+    float u_ijm2 = sample_boundary(uv, vec2(-2.0 * texelSize.x, 0.0));
+
+    float biharmonic = (20.0 * u_curr - 8.0 * (u_ip1j + u_im1j + u_ijp1 + u_ijm1) +
+                       2.0 * (u_ip1jp1 + u_ip1jm1 + u_im1jp1 + u_im1jm1) +
+                       (u_ip2j + u_im2j + u_ijp2 + u_ijm2)) * inv_dx4;
+
+    float excForce = 0.0;
+    float timeSine = sin(2.0 * PI * freq * time);
+    if (excMode == 0) {
+      float theta = atan(physY, physX);
+      float modalPattern = texture2D(modalPatternTexture, uv).r;
+      excForce = excAmp * timeSine * modalPattern * cos(float(mParam) * theta);
+    } else {
+      vec2 centerUV = vec2(0.5, 0.5);
+      float distSq = dot(uv - centerUV, uv - centerUV);
+      if (distSq <= 0.0025) {
+        excForce = excAmp * timeSine * exp(-distSq / 0.001);
+      }
+    }
+
+    float K_coeff = (dt * dt * D_flexural) / rho_h;
+    float F_coeff = (dt * dt) / rho_h;
+    float u_next = (2.0 * u_curr - u_prev) - K_coeff * biharmonic + F_coeff * excForce;
+    u_next *= (1.0 - damp);
+
+    gl_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
+  }
+`;
+
+const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
+  uniform sampler2D particleTexture;
+  uniform sampler2D displacementTexture;
+  uniform vec2 resolution;
+  uniform float plateRadius;
+  uniform float plateWidth;
+  uniform float dx;
+  uniform float dy;
+  uniform float forceMult;
+  uniform float damping;
+  uniform float restitution;
+  uniform float maxSpeed;
+  uniform float deltaTime;
+  uniform float repulsionRadius;
+  uniform float repulsionStrength;
+  uniform float stuckThreshold;
+
+  void main() {
+    vec2 uv = gl_FragCoord.xy / resolution;
+    vec4 data = texture2D(particleTexture, uv);
+    vec2 pos = data.rg;
+    vec2 vel = data.ba;
+
+    if (pos.x > 900.0) {
+      gl_FragColor = vec4(pos, vel);
+      return;
+    }
+
+    vec2 normPos = pos / plateWidth + 0.5;
+    float disp = texture2D(displacementTexture, normPos).r;
+    vec2 texelSizeDisp = 1.0 / vec2(textureSize(displacementTexture, 0));
+    float gradX = (texture2D(displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture2D(displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * dx);
+    float gradY = (texture2D(displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture2D(displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * dy);
+    vec2 force = -2.0 * disp * vec2(gradX, gradY) * forceMult;
+
+    if (repulsionStrength > 0.0) {
+      vec2 texelSizeParticle = 1.0 / resolution;
+      vec2 repulsionForce = vec2(0.0);
+      const int checks = 4;
+      for (int i = 1; i <= checks; i++) {
+        float angle = float(i) / float(checks) * 6.283185;
+        vec2 neighborUV = uv + vec2(cos(angle), sin(angle)) * texelSizeParticle;
+        vec2 toNeighbor = texture2D(particleTexture, neighborUV).rg - pos;
+        float distSq = dot(toNeighbor, toNeighbor);
+        if (distSq < repulsionRadius * repulsionRadius && distSq > 0.00001) {
+          float dist = sqrt(distSq);
+          repulsionForce -= ((repulsionRadius - dist) / repulsionRadius) * normalize(toNeighbor) * repulsionStrength;
+        }
+      }
+      force += repulsionForce;
+    }
+
+    vel = (vel + force * deltaTime) * damping;
+    if (length(vel) > maxSpeed) vel = normalize(vel) * maxSpeed;
+    pos += vel * deltaTime;
+
+    if (length(pos) > plateRadius) {
+      pos = normalize(pos) * plateRadius;
+      vec2 normB = pos / plateRadius;
+      vel -= (1.0 + restitution) * dot(vel, normB) * normB;
+    }
+
+    if (length(vel) < stuckThreshold && abs(disp) > 0.05) {
+      pos = vec2(1001.0, 1001.0);
+      vel = vec2(0.0, 0.0);
+    }
+
+    gl_FragColor = vec4(pos, vel);
+  }
+`;
+
+const PARTICLE_VERTEX_SHADER = `
+  attribute float instanceId;
+
+  uniform mat4 modelViewMatrix;
+  uniform mat4 projectionMatrix;
+  uniform sampler2D particleTexture;
+  uniform sampler2D displacementTexture;
+  uniform vec2 particleTexResolution;
+  uniform float plateWidth;
+  uniform float visScale;
+  uniform float maxVisAmp;
+  uniform float rotationAngle;
+  uniform float u_activeParticleCount;
+
+  varying vec3 v_worldPosition;
+  varying vec3 v_normal;
+  varying vec2 v_particleUV;
+
+  void main() {
+    if (instanceId >= u_activeParticleCount) {
+      gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
+      return;
+    }
+
+    v_particleUV = vec2(
+      mod(instanceId, particleTexResolution.x) + 0.5,
+      floor(instanceId / particleTexResolution.x) + 0.5
+    ) / particleTexResolution;
+    
+    vec4 data = texture2D(particleTexture, v_particleUV);
+    vec2 pos2D = data.rg;
+
+    if (pos2D.x > 900.0) {
+      gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
+      return;
+    }
+
+    vec2 normPos = pos2D / plateWidth + 0.5;
+    float disp = texture2D(displacementTexture, normPos).r;
+    float visHeight = clamp(disp * visScale, -maxVisAmp, maxVisAmp);
+
+    float cosA = cos(rotationAngle);
+    float sinA = sin(rotationAngle);
+    float rotX = pos2D.x * cosA - pos2D.y * sinA;
+    float rotZ = pos2D.x * sinA + pos2D.y * cosA;
+    
+    vec3 finalOffset = vec3(rotX, visHeight, rotZ);
+    
+    v_worldPosition = finalOffset + position;
+    v_normal = normalize(position);
+
+    vec4 mvPosition = modelViewMatrix * vec4(v_worldPosition, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const PARTICLE_FRAGMENT_SHADER = `
+  varying vec3 v_worldPosition;
+  varying vec3 v_normal;
+  varying vec2 v_particleUV;
+
+  uniform sampler2D particleTexture;
+  uniform vec3 lightPos;
+  uniform vec3 cameraPos;
+  uniform float u_colorMode;
+  uniform vec3 u_globalColor;
+  uniform float maxSpeedForColor;
+  uniform vec3 coldColor;
+  uniform vec3 hotColor;
+
+  void main() {
+    vec3 baseColor;
+
+    if (u_colorMode > 0.5) {
+      vec2 vel = texture2D(particleTexture, v_particleUV).ba;
+      float speed = length(vel);
+      float speedFactor = clamp(speed / maxSpeedForColor, 0.0, 1.0);
+      baseColor = mix(coldColor, hotColor, speedFactor);
+    } else {
+      baseColor = u_globalColor;
+    }
+
+    vec3 normal = normalize(v_normal);
+    vec3 lightDir = normalize(lightPos - v_worldPosition);
+    vec3 viewDir = normalize(cameraPos - v_worldPosition);
+    vec3 reflectDir = reflect(-lightDir, normal);
+    
+    float ambientStrength = 0.3;
+    vec3 ambient = ambientStrength * baseColor;
+    
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * baseColor;
+    
+    float specularStrength = 0.8;
+    float shininess = 32.0;
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+    vec3 specular = specularStrength * spec * vec3(1.0);
+
+    vec3 finalColor = ambient + diffuse + specular;
+
+    gl_FragColor = vec4(finalColor, 1.0);
+  }
+`;
+
 const LANG_PACK = {
   ru: {
     lang_toggle: "Switch to English",
@@ -261,7 +519,6 @@ class ChladniSimulator {
     this.defaultAdvancedSettings = {};
     this.besselZerosCache = {};
     this.currentLanguage = 'ru';
-    this.shaders = {};
 
     this._mainInitialization();
   }
@@ -327,7 +584,7 @@ class ChladniSimulator {
     this._setupThreeJSScene();
     this._setupWebAudioSystem();
     
-    await this._loadShadersAndSetupGPUSimulation();
+    this._setupGPUSimulation();
     if (!this.gpuCompute) {
       document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px;"><h1>Критическая ошибка</h1><p>Не удалось инициализировать GPU-симуляцию. Проверьте поддержку WebGL2 в вашем браузере или ошибки в консоли.</p></div>`;
       return;
@@ -356,31 +613,6 @@ class ChladniSimulator {
     this._animateScene();
   }
 
-  async _loadShader(url) {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Failed to load shader: ${url}`);
-    return await response.text();
-  }
-
-  async _loadShadersAndSetupGPUSimulation() {
-    try {
-      const shaderFiles = [
-        'shaders/fdmFragment.glsl',
-        'shaders/particlePhysicsFragment.glsl',
-        'shaders/particleVertex.glsl',
-        'shaders/particleFragment.glsl'
-      ];
-      const [fdm, particlePhysics, particleVertex, particleFragment] = await Promise.all(shaderFiles.map(url => this._loadShader(url)));
-      
-      this.shaders = { fdm, particlePhysics, particleVertex, particleFragment };
-      
-      this._setupGPUSimulation();
-
-    } catch (error) {
-      console.error("Shader loading error:", error);
-    }
-  }
-
   _setupGPUSimulation() {
     if (!this.renderer.capabilities.isWebGL2 && !this.renderer.extensions.get('OES_texture_float')) {
       console.error("Fatal Error: Your browser does not support float textures. GPU simulation cannot be initialized.");
@@ -392,7 +624,7 @@ class ChladniSimulator {
     
     const fdmTexture = this.gpuCompute.createTexture();
     this._fillFDMTexture(fdmTexture);
-    this.fdmVariable = this.gpuCompute.addVariable("textureFDM", this.shaders.fdm, fdmTexture);
+    this.fdmVariable = this.gpuCompute.addVariable("textureFDM", FDM_FRAGMENT_SHADER, fdmTexture);
     this.fdmVariable.renderTargets[0].texture.minFilter = THREE.NearestFilter;
     this.fdmVariable.renderTargets[0].texture.magFilter = THREE.NearestFilter;
     this.fdmVariable.renderTargets[1].texture.minFilter = THREE.NearestFilter;
@@ -400,7 +632,7 @@ class ChladniSimulator {
     
     const particleTexture = this.gpuCompute.createTexture();
     this._fillParticleTexture(particleTexture);
-    this.particleVariable = this.gpuCompute.addVariable("particleTexture", this.shaders.particlePhysics, particleTexture);
+    this.particleVariable = this.gpuCompute.addVariable("particleTexture", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
     
     this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable]);
     this.gpuCompute.setVariableDependencies(this.particleVariable, [this.particleVariable, this.fdmVariable]);
@@ -584,8 +816,8 @@ class ChladniSimulator {
 
     const particleTexRes = Math.ceil(Math.sqrt(particleCount));
     this.particleMeshMaterial = new THREE.ShaderMaterial({
-      vertexShader: this.shaders.particleVertex,
-      fragmentShader: this.shaders.particleFragment,
+      vertexShader: PARTICLE_VERTEX_SHADER,
+      fragmentShader: PARTICLE_FRAGMENT_SHADER,
       uniforms: {
         particleTexture: { value: null },
         displacementTexture: { value: null },
@@ -712,6 +944,11 @@ class ChladniSimulator {
     
     this._updateAudioProcessing(deltaTime);
     
+    if (this.mainAudioContext?.state === 'running' && this.simulationTime - this.lastBPMUpdateTime > 0.5) {
+      this._updateBPM(deltaTime);
+      this.lastBPMUpdateTime = this.simulationTime;
+    }
+    
     this.composer.render(deltaTime);
   }
 
@@ -720,39 +957,37 @@ class ChladniSimulator {
                           (this.drivingMechanism === 'microphone' && this.isMicrophoneEnabled) ||
                           (this.drivingMechanism === 'desktop_audio' && this.isDesktopAudioEnabled);
 
-    if (isAudioActive && this.mainAudioContext?.state === 'running') {
-      if (this.pitchDetectorAnalyserNode) {
-        const acTime = this.mainAudioContext.currentTime;
-        if (acTime - this.lastPitchUpdateTime > PITCH_UPDATE_INTERVAL_SECONDS) {
-          this.lastPitchUpdateTime = acTime;
-          if (this.pitchDetectorSignalBuffer) {
-            try {
-              this.pitchDetectorAnalyserNode.getFloatTimeDomainData(this.pitchDetectorSignalBuffer);
-              const detectedFreq = this._autoCorrelatePitch(this.pitchDetectorSignalBuffer, this.mainAudioContext.sampleRate);
-              if (detectedFreq !== -1) {
-                if (this.lastStablePitchFrequency === 0) this.lastStablePitchFrequency = detectedFreq;
-                this.lastStablePitchFrequency = THREE.MathUtils.lerp(this.lastStablePitchFrequency, detectedFreq, 0.3);
-                this.currentFrequency = detectedFreq;
-                if (this.uiElements.pitchDetectorInfo) {
-                  this.uiElements.pitchDetectorInfo.style.display = 'block';
-                  if (this.uiElements.pitch) this.uiElements.pitch.innerText = Math.round(detectedFreq);
-                  let midi = Math.round(12 * (Math.log(detectedFreq / 440) / Math.log(2))) + 69;
-                  if (this.uiElements.note) this.uiElements.note.innerText = NOTE_NAMES_SHARP[midi % 12];
-                  let cents = Math.floor(1200 * Math.log(detectedFreq / (440 * Math.pow(2, (midi - 69) / 12))) / Math.log(2));
-                  if (this.uiElements.detune_amt) this.uiElements.detune_amt.innerText = Math.abs(cents);
-                  if (this.uiElements.detune) this.uiElements.detune.className = cents === 0 ? "" : (cents < 0 ? "flat" : "sharp");
-                }
-                this.smoothedPitchFrequency = THREE.MathUtils.lerp(this.smoothedPitchFrequency, detectedFreq, PITCH_SMOOTHING_FACTOR);
-                if (Math.abs(this.actualAppliedFrequency - this.smoothedPitchFrequency) > PITCH_CHANGE_THRESHOLD_HZ) {
-                  this.actualAppliedFrequency = this.smoothedPitchFrequency;
-                  this._resetFullSimulationState();
-                } else {
-                  this.actualAppliedFrequency = this.smoothedPitchFrequency;
-                }
-                this._updateFrequencyControlsUI();
+    if (isAudioActive && this.pitchDetectorAnalyserNode && this.mainAudioContext?.state === 'running') {
+      const acTime = this.mainAudioContext.currentTime;
+      if (acTime - this.lastPitchUpdateTime > PITCH_UPDATE_INTERVAL_SECONDS) {
+        this.lastPitchUpdateTime = acTime;
+        if (this.pitchDetectorSignalBuffer) {
+          try {
+            this.pitchDetectorAnalyserNode.getFloatTimeDomainData(this.pitchDetectorSignalBuffer);
+            const detectedFreq = this._autoCorrelatePitch(this.pitchDetectorSignalBuffer, this.mainAudioContext.sampleRate);
+            if (detectedFreq !== -1) {
+              if (this.lastStablePitchFrequency === 0) this.lastStablePitchFrequency = detectedFreq;
+              this.lastStablePitchFrequency = THREE.MathUtils.lerp(this.lastStablePitchFrequency, detectedFreq, 0.3);
+              this.currentFrequency = detectedFreq;
+              if (this.uiElements.pitchDetectorInfo) {
+                this.uiElements.pitchDetectorInfo.style.display = 'block';
+                if (this.uiElements.pitch) this.uiElements.pitch.innerText = Math.round(detectedFreq);
+                let midi = Math.round(12 * (Math.log(detectedFreq / 440) / Math.log(2))) + 69;
+                if (this.uiElements.note) this.uiElements.note.innerText = NOTE_NAMES_SHARP[midi % 12];
+                let cents = Math.floor(1200 * Math.log(detectedFreq / (440 * Math.pow(2, (midi - 69) / 12))) / Math.log(2));
+                if (this.uiElements.detune_amt) this.uiElements.detune_amt.innerText = Math.abs(cents);
+                if (this.uiElements.detune) this.uiElements.detune.className = cents === 0 ? "" : (cents < 0 ? "flat" : "sharp");
               }
-            } catch (e) {}
-          }
+              this.smoothedPitchFrequency = THREE.MathUtils.lerp(this.smoothedPitchFrequency, detectedFreq, PITCH_SMOOTHING_FACTOR);
+              if (Math.abs(this.actualAppliedFrequency - this.smoothedPitchFrequency) > PITCH_CHANGE_THRESHOLD_HZ) {
+                this.actualAppliedFrequency = this.smoothedPitchFrequency;
+                this._resetFullSimulationState();
+              } else {
+                this.actualAppliedFrequency = this.smoothedPitchFrequency;
+              }
+              this._updateFrequencyControlsUI();
+            }
+          } catch (e) {}
         }
       }
 
@@ -768,11 +1003,6 @@ class ChladniSimulator {
         if (this.onsetHistory.length > this.onsetHistoryMaxLength) {
           this.onsetHistory.shift();
         }
-      }
-      
-      if (this.simulationTime - this.lastBPMUpdateTime > 0.25) {
-        this._updateBPM(deltaTime);
-        this.lastBPMUpdateTime = this.simulationTime;
       }
     }
 
@@ -1456,12 +1686,12 @@ class ChladniSimulator {
     return ac;
   }
 
-  _updateBPM() {
+  _updateBPM(deltaTime) {
     if (this.onsetHistory.length < 20) return;
     const ac = this._autocorrelation(this.onsetHistory);
     let maxAc = -1;
     let bestLag = -1;
-    const sampleRate = 1.0 / this.animationClock.getDelta();
+    const sampleRate = 1.0 / deltaTime;
     const minLag = Math.floor(sampleRate * 60 / 220); 
     const maxLag = Math.floor(sampleRate * 60 / 60);
 
