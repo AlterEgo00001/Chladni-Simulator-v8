@@ -12,7 +12,6 @@ const FDM_FRAGMENT_SHADER = `
 
   #define PI 3.141592653589793
 
-  in vec2 vUv;
   out vec4 out_FragColor;
 
   uniform sampler2D u_fdmTexture_read;
@@ -92,7 +91,6 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   precision highp float;
   precision highp sampler2D;
 
-  in vec2 vUv;
   out vec4 out_FragColor;
 
   uniform sampler2D u_particleTexture_read;
