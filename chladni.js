@@ -4,16 +4,14 @@ import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { LuminosityHighPassShader } from 'three/addons/shaders/LuminosityHighPassShader.js';
 
 const FDM_FRAGMENT_SHADER = `
-  #version 300 es
   precision highp float;
   precision highp sampler2D;
 
   #define PI 3.141592653589793
 
+  in vec2 vUv;
   out vec4 out_FragColor;
 
   uniform sampler2D u_fdmTexture_read;
@@ -92,7 +90,6 @@ const FDM_FRAGMENT_SHADER = `
 `;
 
 const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
-  #version 300 es
   precision highp float;
   precision highp sampler2D;
 
@@ -159,7 +156,6 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 `;
 
 const PARTICLE_VERTEX_SHADER = `
-  #version 300 es
   precision highp float;
 
   in float instanceId;
@@ -213,7 +209,6 @@ const PARTICLE_VERTEX_SHADER = `
 `;
 
 const PARTICLE_FRAGMENT_SHADER = `
-  #version 300 es
   precision highp float;
 
   in vec3 v_worldPosition;
@@ -762,13 +757,13 @@ class ChladniSimulator {
     requestAnimationFrame(this._animateScene.bind(this));
     if (!this.isReady) return;
 
-    const deltaTime = Math.min(this.animationClock.getDelta(), 0.05);
-    this.simulationTime += deltaTime;
+    this.animationClock.getDelta();
+    this.simulationTime += 1 / 60; // Fixed timestep
     
     this.orbitControls.update();
     
     if (this.plateRotationSpeed !== 0) {
-      this.plateRotationAngle = (this.plateRotationAngle + this.plateRotationSpeed * 2 * Math.PI * deltaTime) % (2 * Math.PI);
+      this.plateRotationAngle = (this.plateRotationAngle + this.plateRotationSpeed * 2 * Math.PI * (1/60)) % (2 * Math.PI);
     }
 
     if (!this.areParticlesFrozen && this.gpuCompute) {
@@ -788,7 +783,7 @@ class ChladniSimulator {
       this.fdmVariable.material.uniforms.u_mParam.value = this.mParameter;
       this.fdmVariable.material.uniforms.u_modalPatternTexture.value = this.modalPatternTexture;
       
-      this.particleVariable.material.uniforms.u_deltaTime.value = deltaTime * this.particleSimulationSpeedScale;
+      this.particleVariable.material.uniforms.u_deltaTime.value = (1/60) * this.particleSimulationSpeedScale;
       this.particleVariable.material.uniforms.u_dx.value = dx;
       this.particleVariable.material.uniforms.u_forceMult.value = this.PARTICLE_FORCE_BASE;
       this.particleVariable.material.uniforms.u_damping.value = this.PARTICLE_DAMPING_BASE;
