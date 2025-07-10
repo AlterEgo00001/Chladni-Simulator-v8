@@ -6,15 +6,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 const FDM_FRAGMENT_SHADER = `
-  precision highp float;
-  precision highp sampler2D;
-
   #define PI 3.141592653589793
 
-  in vec2 vUv;
-  out vec4 out_FragColor;
-
-  uniform sampler2D u_fdmTexture_read;
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -46,7 +39,7 @@ const FDM_FRAGMENT_SHADER = `
     float physX = (uv.x - 0.5) * u_plateRadius * 2.0;
     float physY = (uv.y - 0.5) * u_plateRadius * 2.0;
     if (length(vec2(physX, physY)) > u_plateRadius) {
-      out_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
     vec4 data = texture(u_fdmTexture_read, uv);
@@ -85,17 +78,11 @@ const FDM_FRAGMENT_SHADER = `
     float F_coeff = (u_dt * u_dt) / u_rho_h;
     float u_next = (2.0 * u_curr - u_prev) - K_coeff * biharmonic + F_coeff * excForce;
     u_next *= (1.0 - u_damp);
-    out_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
+    gl_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
   }
 `;
 
 const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
-  precision highp float;
-  precision highp sampler2D;
-
-  out vec4 out_FragColor;
-
-  uniform sampler2D u_particleTexture_read;
   uniform sampler2D u_displacementTexture;
   uniform float u_plateRadius;
   uniform float u_plateWidth;
@@ -109,12 +96,12 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_repulsionStrength;
   uniform float u_stuckThreshold;
   void main() {
-    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_particleTexture_read, 0));
+    vec2 uv = gl_FragCoord.xy / resolution.xy;
     vec4 data = texture(u_particleTexture_read, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
     if (pos.x > 900.0) {
-      out_FragColor = vec4(pos, vel);
+      gl_FragColor = vec4(pos, vel);
       return;
     }
     vec2 normPos = pos / u_plateWidth + 0.5;
@@ -124,7 +111,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
     float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
-      vec2 texelSizeParticle = 1.0 / vec2(textureSize(u_particleTexture_read, 0));
+      vec2 texelSizeParticle = 1.0 / resolution.xy;
       vec2 repulsionForce = vec2(0.0);
       const int checks = 4;
       for (int i = 1; i <= checks; i++) {
@@ -151,11 +138,12 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       pos = vec2(1001.0, 1001.0);
       vel = vec2(0.0, 0.0);
     }
-    out_FragColor = vec4(pos, vel);
+    gl_FragColor = vec4(pos, vel);
   }
 `;
 
 const PARTICLE_VERTEX_SHADER = `
+  #version 300 es
   precision highp float;
 
   in float instanceId;
@@ -209,6 +197,7 @@ const PARTICLE_VERTEX_SHADER = `
 `;
 
 const PARTICLE_FRAGMENT_SHADER = `
+  #version 300 es
   precision highp float;
 
   in vec3 v_worldPosition;
@@ -663,14 +652,7 @@ class ChladniSimulator {
     bloomPass.strength = 0.3;
     bloomPass.radius = 0.3;
     
-    const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
-        type: THREE.HalfFloatType,
-        format: THREE.RGBAFormat,
-        minFilter: THREE.LinearFilter,
-        magFilter: THREE.LinearFilter,
-    });
-    
-    this.composer = new EffectComposer(this.renderer, renderTarget);
+    this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(renderScene);
     this.composer.addPass(bloomPass);
   }
@@ -757,8 +739,7 @@ class ChladniSimulator {
     requestAnimationFrame(this._animateScene.bind(this));
     if (!this.isReady) return;
 
-    this.animationClock.getDelta();
-    this.simulationTime += 1 / 60; // Fixed timestep
+    this.simulationTime += 1 / 60; // Fixed timestep for physics
     
     this.orbitControls.update();
     
