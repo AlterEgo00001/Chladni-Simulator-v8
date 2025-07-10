@@ -6,7 +6,16 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 const FDM_FRAGMENT_SHADER = `
+  #version 300 es
+  precision highp float;
+  precision highp sampler2D;
+
   #define PI 3.141592653589793
+
+  in vec2 vUv;
+  out vec4 out_FragColor;
+
+  uniform sampler2D u_fdmTexture_read;
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -24,26 +33,23 @@ const FDM_FRAGMENT_SHADER = `
     vec2 sample_uv = uv + offset;
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
     if (length(sample_phys) > u_plateRadius) {
-      return texture2D(textureFDM, uv - offset).r;
+      return texture(u_fdmTexture_read, uv - offset).r;
     }
-    return texture2D(textureFDM, sample_uv).r;
+    return texture(u_fdmTexture_read, sample_uv).r;
   }
 
   void main() {
-    vec2 uv = gl_FragCoord.xy / vec2(textureSize(textureFDM, 0));
-    vec2 texelSize = 1.0 / vec2(textureSize(textureFDM, 0));
-
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_fdmTexture_read, 0));
+    vec2 texelSize = 1.0 / vec2(textureSize(u_fdmTexture_read, 0));
     float physX = (uv.x - 0.5) * u_plateRadius * 2.0;
     float physY = (uv.y - 0.5) * u_plateRadius * 2.0;
     if (length(vec2(physX, physY)) > u_plateRadius) {
-      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+      out_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-
-    vec4 data = texture2D(textureFDM, uv);
+    vec4 data = texture(u_fdmTexture_read, uv);
     float u_curr = data.r;
     float u_prev = data.g;
-
     float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
     float u_ip1j = sample_boundary(uv, vec2(0.0, texelSize.y));
     float u_im1j = sample_boundary(uv, vec2(0.0, -texelSize.y));
@@ -57,16 +63,14 @@ const FDM_FRAGMENT_SHADER = `
     float u_im2j = sample_boundary(uv, vec2(0.0, -2.0 * texelSize.y));
     float u_ijp2 = sample_boundary(uv, vec2(2.0 * texelSize.x, 0.0));
     float u_ijm2 = sample_boundary(uv, vec2(-2.0 * texelSize.x, 0.0));
-
     float biharmonic = (20.0 * u_curr - 8.0 * (u_ip1j + u_im1j + u_ijp1 + u_ijm1) +
                        2.0 * (u_ip1jp1 + u_ip1jm1 + u_im1jp1 + u_im1jm1) +
                        (u_ip2j + u_im2j + u_ijp2 + u_ijm2)) * inv_dx4;
-
     float excForce = 0.0;
     float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
-      float modalPattern = texture2D(u_modalPatternTexture, uv).r;
+      float modalPattern = texture(u_modalPatternTexture, uv).r;
       excForce = u_excAmp * timeSine * modalPattern * cos(float(u_mParam) * theta);
     } else {
       vec2 centerUV = vec2(0.5, 0.5);
@@ -75,17 +79,23 @@ const FDM_FRAGMENT_SHADER = `
         excForce = u_excAmp * timeSine * exp(-distSq / 0.001);
       }
     }
-
     float K_coeff = (u_dt * u_dt * u_D_flexural) / u_rho_h;
     float F_coeff = (u_dt * u_dt) / u_rho_h;
     float u_next = (2.0 * u_curr - u_prev) - K_coeff * biharmonic + F_coeff * excForce;
     u_next *= (1.0 - u_damp);
-
-    gl_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
+    out_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
   }
 `;
 
 const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
+  #version 300 es
+  precision highp float;
+  precision highp sampler2D;
+
+  in vec2 vUv;
+  out vec4 out_FragColor;
+
+  uniform sampler2D u_particleTexture_read;
   uniform sampler2D u_displacementTexture;
   uniform float u_plateRadius;
   uniform float u_plateWidth;
@@ -99,28 +109,28 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_repulsionStrength;
   uniform float u_stuckThreshold;
   void main() {
-    vec2 uv = gl_FragCoord.xy / vec2(textureSize(textureParticles, 0));
-    vec4 data = texture2D(textureParticles, uv);
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_particleTexture_read, 0));
+    vec4 data = texture(u_particleTexture_read, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
     if (pos.x > 900.0) {
-      gl_FragColor = vec4(pos, vel);
+      out_FragColor = vec4(pos, vel);
       return;
     }
     vec2 normPos = pos / u_plateWidth + 0.5;
-    float disp = texture2D(u_displacementTexture, normPos).r;
+    float disp = texture(u_displacementTexture, normPos).r;
     vec2 texelSizeDisp = 1.0 / vec2(textureSize(u_displacementTexture, 0));
-    float gradX = (texture2D(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture2D(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
-    float gradY = (texture2D(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture2D(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
+    float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
+    float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
-      vec2 texelSizeParticle = 1.0 / vec2(textureSize(textureParticles, 0));
+      vec2 texelSizeParticle = 1.0 / vec2(textureSize(u_particleTexture_read, 0));
       vec2 repulsionForce = vec2(0.0);
       const int checks = 4;
       for (int i = 1; i <= checks; i++) {
         float angle = float(i) / float(checks) * 6.283185;
         vec2 neighborUV = uv + vec2(cos(angle), sin(angle)) * texelSizeParticle;
-        vec2 toNeighbor = texture2D(textureParticles, neighborUV).rg - pos;
+        vec2 toNeighbor = texture(u_particleTexture_read, neighborUV).rg - pos;
         float distSq = dot(toNeighbor, toNeighbor);
         if (distSq < u_repulsionRadius * u_repulsionRadius && distSq > 0.00001) {
           float dist = sqrt(distSq);
@@ -141,12 +151,19 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       pos = vec2(1001.0, 1001.0);
       vel = vec2(0.0, 0.0);
     }
-    gl_FragColor = vec4(pos, vel);
+    out_FragColor = vec4(pos, vel);
   }
 `;
 
 const PARTICLE_VERTEX_SHADER = `
-  attribute float instanceId;
+  #version 300 es
+  precision highp float;
+
+  in float instanceId;
+  in vec3 position;
+
+  uniform mat4 modelViewMatrix;
+  uniform mat4 projectionMatrix;
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -156,9 +173,11 @@ const PARTICLE_VERTEX_SHADER = `
   uniform float u_rotationAngle;
   uniform float u_activeParticleCount;
   uniform float u_particleSize;
-  varying vec3 v_worldPosition;
-  varying vec3 v_normal;
-  varying vec2 v_particleUV;
+
+  out vec3 v_worldPosition;
+  out vec3 v_normal;
+  out vec2 v_particleUV;
+
   void main() {
     if (instanceId >= u_activeParticleCount) {
       gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
@@ -168,14 +187,14 @@ const PARTICLE_VERTEX_SHADER = `
       mod(instanceId, u_particleTexResolution.x) + 0.5,
       floor(instanceId / u_particleTexResolution.x) + 0.5
     ) / u_particleTexResolution;
-    vec4 data = texture2D(u_particleTexture, v_particleUV);
+    vec4 data = texture(u_particleTexture, v_particleUV);
     vec2 pos2D = data.rg;
     if (pos2D.x > 900.0) {
       gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
     vec2 normPos = pos2D / u_plateWidth + 0.5;
-    float disp = texture2D(u_displacementTexture, normPos).r;
+    float disp = texture(u_displacementTexture, normPos).r;
     float visHeight = clamp(disp * u_visScale, -u_maxVisAmp, u_maxVisAmp);
     float cosA = cos(u_rotationAngle);
     float sinA = sin(u_rotationAngle);
@@ -191,9 +210,15 @@ const PARTICLE_VERTEX_SHADER = `
 `;
 
 const PARTICLE_FRAGMENT_SHADER = `
-  varying vec3 v_worldPosition;
-  varying vec3 v_normal;
-  varying vec2 v_particleUV;
+  #version 300 es
+  precision highp float;
+
+  in vec3 v_worldPosition;
+  in vec3 v_normal;
+  in vec2 v_particleUV;
+  
+  out vec4 out_FragColor;
+
   uniform sampler2D u_particleTexture;
   uniform vec3 u_lightPos;
   uniform vec3 u_cameraPos;
@@ -205,7 +230,7 @@ const PARTICLE_FRAGMENT_SHADER = `
   void main() {
     vec3 baseColor;
     if (u_colorMode > 0.5) {
-      vec2 vel = texture2D(u_particleTexture, v_particleUV).ba;
+      vec2 vel = texture(u_particleTexture, v_particleUV).ba;
       float speed = length(vel);
       float speedFactor = clamp(speed / u_maxSpeedForColor, 0.0, 1.0);
       baseColor = mix(u_coldColor, u_hotColor, speedFactor);
@@ -225,7 +250,7 @@ const PARTICLE_FRAGMENT_SHADER = `
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
     vec3 specular = specularStrength * spec * vec3(1.0);
     vec3 finalColor = ambient + diffuse + specular;
-    gl_FragColor = vec4(finalColor, 1.0);
+    out_FragColor = vec4(finalColor, 1.0);
   }
 `;
 
@@ -461,7 +486,7 @@ class ChladniSimulator {
     this._resetAllSettingsToDefaults(false);
 
     const gpuWarning = document.createElement('p'); 
-    gpuWarning.textContent = 'Симуляция на GPU'; 
+    gpuWarning.textContent = 'Симуляция на GPU (WebGL 2.0)'; 
     gpuWarning.style.cssText = 'color: #98c379; font-size: 12px; text-align: center; margin: 5px 0; padding: 3px; border: 1px solid #98c379; border-radius: 4px;';
     if (this.uiElements.controls) {
       const fs = this.uiElements.controls.querySelector('fieldset');
@@ -474,8 +499,8 @@ class ChladniSimulator {
   }
 
   _setupGPUSimulation() {
-    if (!this.renderer.capabilities.isWebGL2 && !this.renderer.extensions.get('OES_texture_float')) {
-      throw new Error("Fatal Error: Your browser does not support float textures (WebGL2 or OES_texture_float extension). GPU simulation cannot be initialized.");
+    if (!this.renderer.capabilities.isWebGL2) {
+      throw new Error("Fatal Error: This application requires WebGL 2.0. Your browser does not support it.");
     }
     
     const particleTexSize = Math.ceil(Math.sqrt(this.MAX_PARTICLE_COUNT));
@@ -486,12 +511,12 @@ class ChladniSimulator {
     
     const fdmTexture = this.gpuCompute.createTexture();
     this._fillFDMTexture(fdmTexture, fdmTexSize);
-    this.fdmVariable = this.gpuCompute.addVariable("textureFDM", FDM_FRAGMENT_SHADER, fdmTexture);
+    this.fdmVariable = this.gpuCompute.addVariable("u_fdmTexture_read", FDM_FRAGMENT_SHADER, fdmTexture);
     if (!this.fdmVariable) throw new Error("Failed to create FDM GPGPU variable. Check FDM shader for errors.");
     
     const particleTexture = this.gpuCompute.createTexture();
     this._fillParticleTexture(particleTexture);
-    this.particleVariable = this.gpuCompute.addVariable("textureParticles", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
+    this.particleVariable = this.gpuCompute.addVariable("u_particleTexture_read", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
     if (!this.particleVariable) throw new Error("Failed to create Particle GPGPU variable. Check Particle Physics shader for errors.");
 
     this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable]);
@@ -588,14 +613,19 @@ class ChladniSimulator {
     this.camera.position.set(0, this.PLATE_RADIUS * 1.6, this.PLATE_RADIUS * 2.0);
     this.camera.lookAt(0, 0, 0);
     
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('webgl2', { antialias: true, powerPreference: "high-performance" });
+    if (!context) {
+        throw new Error('WebGL 2.0 is not available on this device.');
+    }
+    document.getElementById('scene-container').appendChild(canvas);
+
+    this.renderer = new THREE.WebGLRenderer({ canvas: canvas, context: context });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.enableShadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-    document.getElementById('scene-container').appendChild(this.renderer.domElement);
     
     this.orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbitControls.enableDamping = true;
@@ -659,7 +689,6 @@ class ChladniSimulator {
     const baseGeom = new THREE.SphereGeometry(1, 6, 4);
     geometry.index = baseGeom.index;
     geometry.attributes.position = baseGeom.attributes.position;
-    geometry.attributes.uv = baseGeom.attributes.uv;
     baseGeom.dispose();
 
     const instanceIds = new Float32Array(particleCount);
@@ -1137,7 +1166,8 @@ class ChladniSimulator {
   }
   
   _updateFrequencyControlsUI() {
-    if (this.uiElements.freqValueText) this.uiElements.freqValueText.textContent = `${this.currentFrequency.toFixed(0)} Гц`;
+    if (!this.uiElements.freqValueText) return;
+    this.uiElements.freqValueText.textContent = `${this.currentFrequency.toFixed(0)} Гц`;
     if (this.uiElements.frequencyInput && document.activeElement !== this.uiElements.frequencyInput) this.uiElements.frequencyInput.value = this.currentFrequency.toFixed(1);
     if (this.uiElements.frequencySlider && document.activeElement !== this.uiElements.frequencySlider) {
       const minLog = Math.log10(20); const maxLog = Math.log10(20000);
@@ -1467,12 +1497,10 @@ class ChladniSimulator {
 
   _updateSubtitles() {
     const subContainer = this.uiElements.subtitleContainer;
-    if (!this.isSubtitlesEnabled) {
-      if(subContainer) subContainer.classList.remove('visible');
-      return;
-    }
-    if (!this.audioElement || this.currentSubtitles.length === 0 || !subContainer) {
-      if (subContainer && subContainer.textContent !== '') {
+    if (!this.isSubtitlesEnabled || !subContainer) return;
+    
+    if (!this.audioElement || this.currentSubtitles.length === 0) {
+      if (subContainer.textContent !== '') {
         subContainer.textContent = '';
         subContainer.classList.remove('visible');
       }
