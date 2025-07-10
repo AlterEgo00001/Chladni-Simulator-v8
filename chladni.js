@@ -7,7 +7,6 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
 const FDM_FRAGMENT_SHADER = `
   #define PI 3.141592653589793
-
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -143,7 +142,9 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 `;
 
 const PARTICLE_VERTEX_SHADER = `
+  #version 300 es
   in float instanceId;
+
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -184,12 +185,14 @@ const PARTICLE_VERTEX_SHADER = `
     vec3 scaledPosition = position * u_particleSize;
     v_worldPosition = finalOffset + scaledPosition;
     v_normal = normalize(position);
-    vec4 mvPosition = modelViewMatrix * vec4(v_worldPosition, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(v_worldPosition, 1.0);
   }
 `;
 
 const PARTICLE_FRAGMENT_SHADER = `
+  #version 300 es
+  precision highp float;
+
   in vec3 v_worldPosition;
   in vec3 v_normal;
   in vec2 v_particleUV;
