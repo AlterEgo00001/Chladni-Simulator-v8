@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
 const FDM_FRAGMENT_SHADER = `
   #define PI 3.141592653589793
-  uniform sampler2D u_fdmTexture_read;
+
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -26,9 +26,9 @@ const FDM_FRAGMENT_SHADER = `
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
     float result = 0.0;
     if (length(sample_phys) > u_plateRadius) {
-      result = texture2D(u_fdmTexture_read, uv - offset).r;
+      result = texture(u_fdmTexture_read, uv - offset).r;
     } else {
-      result = texture2D(u_fdmTexture_read, sample_uv).r;
+      result = texture(u_fdmTexture_read, sample_uv).r;
     }
     return result;
   }
@@ -42,7 +42,7 @@ const FDM_FRAGMENT_SHADER = `
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-    vec4 data = texture2D(u_fdmTexture_read, uv);
+    vec4 data = texture(u_fdmTexture_read, uv);
     float u_curr = data.r;
     float u_prev = data.g;
     float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
@@ -65,7 +65,7 @@ const FDM_FRAGMENT_SHADER = `
     float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
-      float modalPattern = texture2D(u_modalPatternTexture, uv).r;
+      float modalPattern = texture(u_modalPatternTexture, uv).r;
       excForce = u_excAmp * timeSine * modalPattern * cos(float(u_mParam) * theta);
     } else {
       vec2 centerUV = vec2(0.5, 0.5);
@@ -81,6 +81,7 @@ const FDM_FRAGMENT_SHADER = `
     gl_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
   }
 `;
+
 
 const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform sampler2D u_particleTexture_read;
