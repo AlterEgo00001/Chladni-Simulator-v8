@@ -7,6 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
 const FDM_FRAGMENT_SHADER = `#version 300 es
   precision highp float;
+  precision highp sampler2D;
 
   uniform sampler2D u_fdmTexture_read;
   uniform sampler2D u_modalPatternTexture;
@@ -1194,28 +1195,29 @@ class ChladniSimulator {
   _storeDefaultSimulationSettings() {
     this.defaultAdvancedSettings = { PLATE_THICKNESS: PLATE_THICKNESS_DEFAULT, PLATE_DENSITY: PLATE_DENSITY_DEFAULT, E_MODULUS: E_MODULUS_DEFAULT, POISSON_RATIO: POISSON_RATIO_DEFAULT, GRID_SIZE: GPU_GRID_SIZE_DEFAULT, FDM_STEPS_PER_FRAME: GPU_FDM_STEPS_PER_FRAME_DEFAULT, FDM_DAMPING_FACTOR: 0.00005, MAX_PARTICLE_COUNT: GPU_PARTICLE_COUNT_DEFAULT, PARTICLE_FORCE_BASE: PARTICLE_FORCE_BASE_DEFAULT, PARTICLE_DAMPING_BASE: PARTICLE_DAMPING_BASE_DEFAULT, MAX_PARTICLE_SPEED: MAX_PARTICLE_SPEED_DEFAULT, VISUAL_PARTICLE_SIZE: VISUAL_PARTICLE_SIZE_DEFAULT, ENABLE_PARTICLE_REPULSION: ENABLE_REPULSION_DEFAULT, PARTICLE_REPULSION_RADIUS: REPULSION_RADIUS_DEFAULT, PARTICLE_REPULSION_STRENGTH: REPULSION_STRENGTH_DEFAULT, EXC_BASE_AMP: EXC_BASE_AMP_DEFAULT, VISUAL_DEFORMATION_SCALE: VISUAL_DEFORMATION_SCALE_DEFAULT, MAX_VISUAL_AMPLITUDE: MAX_VISUAL_AMPLITUDE_DEFAULT, };
   }
-  _createPianoKeys() {
-    if (!this.uiElements.pianoContainer) return;
-    this.uiElements.pianoContainer.innerHTML = '';
-    const keys = [{ n: 'C', t: 'white' }, { n: 'C#', t: 'black' }, { n: 'D', t: 'white' }, { n: 'D#', t: 'black' }, { n: 'E', t: 'white' }, { n: 'F', t: 'white' }, { n: 'F#', t: 'black' }, { n: 'G', t: 'white' }, { n: 'G#', t: 'black' }, { n: 'A', t: 'white' }, { n: 'A#', t: 'black' }, { n: 'B', t: 'white' }];
-    let whiteOff = 0;
-    keys.forEach(k => {
-      const div = document.createElement('div');
-      div.className = `piano-key ${k.t}`;
-      div.dataset.note = k.n;
-      const span = document.createElement('span'); span.textContent = k.n; div.appendChild(span);
-      if (k.t === 'white') { div.style.left = `${whiteOff * 35}px`; whiteOff++; }
-      else { div.style.left = `${(whiteOff - 1) * 35 + 17.5}px`; }
-      const press = (e) => { e.preventDefault(); this._handlePianoKeyPress(k.n, true, false, e.shiftKey); };
-      const rel = (e) => { e.preventDefault(); this._handlePianoKeyPress(k.n, false, false, false); };
-      div.addEventListener('mousedown', press);
-      div.addEventListener('mouseup', rel);
-      div.addEventListener('mouseleave', (e) => { if (e.buttons === 1 && this.activePianoKeys.has(k.n)) this._handlePianoKeyPress(k.n, false, false, false); });
-      div.addEventListener('touchstart', press, { passive: false });
-      div.addEventListener('touchend', rel);
-      this.uiElements.pianoContainer.appendChild(div);
-    });
+  _createPianoKeys() { 
+    if (!this.uiElements.pianoContainer) return; 
+    this.uiElements.pianoContainer.innerHTML = ''; 
+    const keys = [{n:'C',t:'white'},{n:'C#',t:'black'},{n:'D',t:'white'},{n:'D#',t:'black'},{n:'E',t:'white'},{n:'F',t:'white'},{n:'F#',t:'black'},{n:'G',t:'white'},{n:'G#',t:'black'},{n:'A',t:'white'},{n:'A#',t:'black'},{n:'B',t:'white'}]; 
+    let whiteOff=0; 
+    keys.forEach(k=>{ 
+        const div = document.createElement('div'); 
+        div.className=`piano-key ${k.t}`; 
+        div.dataset.note=k.n; 
+        const span = document.createElement('span'); span.textContent = k.n; div.appendChild(span);
+        if(k.t==='white'){ div.style.left=`${whiteOff*35}px`; whiteOff++; } 
+        else { div.style.left=`${(whiteOff-1)*35 + 17.5}px`; }
+        const press=(e)=>{ e.preventDefault(); this._handlePianoKeyPress(k.n, true, false, e.shiftKey); }; 
+        const rel=(e)=>{ e.preventDefault(); this._handlePianoKeyPress(k.n, false, false, false); }; 
+        div.addEventListener('mousedown',press); 
+        div.addEventListener('mouseup',rel); 
+        div.addEventListener('mouseleave',(e)=>{if(e.buttons===1&&this.activePianoKeys.has(k.n))this._handlePianoKeyPress(k.n,false, false, false);}); 
+        div.addEventListener('touchstart',press,{passive:false}); 
+        div.addEventListener('touchend',rel);
+        this.uiElements.pianoContainer.appendChild(div); 
+    }); 
   }
+
   _handleKeyboardPiano(event) {
     if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
     const note = this.keyToNoteMapping[event.code];
@@ -1228,25 +1230,33 @@ class ChladniSimulator {
       }
     }
   }
+
   _handlePianoKeyPress(noteOrKeyCode, isPressed, isKeyboardEvent = false, isShiftPressed = false) {
     let noteName = isKeyboardEvent ? this.keyToNoteMapping[noteOrKeyCode] : noteOrKeyCode;
     if (!noteName) return;
+    
     let actualOctave = this.currentPianoOctave;
     if (noteName.endsWith('5')) { actualOctave++; noteName = noteName.slice(0, -1); }
     if (isShiftPressed) actualOctave++;
+    
     const keySet = isKeyboardEvent ? this.keyboardPressedKeys : this.activePianoKeys;
     const key = isKeyboardEvent ? noteOrKeyCode : noteName;
+    
     if (isPressed) keySet.add(key); else keySet.delete(key);
+    
     const pianoKeyElement = this.uiElements.pianoContainer?.querySelector(`.piano-key[data-note="${noteName}"]`);
-    if (pianoKeyElement) pianoKeyElement.classList.toggle('active', isPressed);
+    if(pianoKeyElement) pianoKeyElement.classList.toggle('active', isPressed);
+
     if (isPressed) {
       this.currentFrequency = 440 * Math.pow(2, (NOTE_TO_MIDI_NUMBER_OFFSET[noteName] + (actualOctave * 12) - 69) / 12);
       this._setActiveDrivingMechanism('point');
       if (this.isGeneratedSoundEnabled) { this._toggleGeneratedSoundPlayback(true); this._toggleGeneratedSoundPlayback(false); }
     }
   }
+
   _toggleGeneratedSoundPlayback(forceOff = false) {
     this.isGeneratedSoundEnabled = forceOff ? false : !this.isGeneratedSoundEnabled;
+
     if (this.generatedSoundOscillator) {
       this.generatedSoundOscillator.stop();
       this.generatedSoundOscillator = null;
@@ -1264,14 +1274,25 @@ class ChladniSimulator {
     }
     this._updateUIToggleButtons();
   }
+  
+  _createAudioElement() {
+    const audio = document.createElement('audio');
+    audio.crossOrigin = "anonymous";
+    audio.addEventListener('loadedmetadata', () => {
+        this.audioFileDuration = audio.duration;
+    });
+    audio.addEventListener('ended', () => this._nextTrack());
+    return audio;
+  }
+
   async _handleAudioFileSelection(event) {
-    if (this.isLoadingTrack) return;
     if (!event.target.files.length) return;
     await this._stopLoadedAudioFilePlayback(true);
     this.playlistFiles = Array.from(event.target.files);
     this.currentPlaylistIndex = -1;
     this._updateAudioFileUI();
   }
+  
   async _loadAndPlayTrack(trackIndex) {
     if (this.isLoadingTrack) return;
     if (trackIndex < 0 || trackIndex >= this.playlistFiles.length) {
@@ -1283,72 +1304,81 @@ class ChladniSimulator {
     const file = this.playlistFiles[trackIndex];
     this.activeFetchID++;
     const currentFetchID = this.activeFetchID;
+    
     if (this.uiElements.audioInfoEl) this.uiElements.audioInfoEl.textContent = `Обработка: ${file.name}...`;
+
     await this._findAndLoadLyrics(file, currentFetchID);
+    
     try {
       const arrayBuffer = await file.arrayBuffer();
       this.audioFileBuffer = await this.mainAudioContext.decodeAudioData(arrayBuffer);
       this.audioFileDuration = this.audioFileBuffer.duration;
+
       let bands = null;
       if (this.audioFileDuration < MAX_AUDIO_DURATION_FOR_MULTIBAND_S) {
         bands = await this._createFrequencyBands(this.audioFileBuffer);
       }
       this.bandSources = bands;
-      if (this.audioElement) {
-        this.audioElement.pause();
-        if (this.audioElement.src && this.audioElement.src.startsWith('blob:')) {
-          URL.revokeObjectURL(this.audioElement.src);
-        }
+
+      if (this.audioElement && this.audioElement.src && this.audioElement.src.startsWith('blob:')) {
+        URL.revokeObjectURL(this.audioElement.src);
       }
-      this.audioElement = document.createElement('audio');
+      
       this.audioElement.src = URL.createObjectURL(file);
-      this.audioElement.crossOrigin = "anonymous";
-      this.audioElement.onended = () => this._nextTrack();
-      if (this.audioFileSourceNode) this.audioFileSourceNode.disconnect();
-      this.audioFileSourceNode = this.mainAudioContext.createMediaElementSource(this.audioElement);
-      this.audioFileSourceNode.connect(this.mainAudioContext.destination);
-      if (this.pitchDetectorAnalyserNode) this.audioFileSourceNode.connect(this.pitchDetectorAnalyserNode);
-      if (this.fftAnalyserNode) this.audioFileSourceNode.connect(this.fftAnalyserNode);
+      
+      if (!this.audioFileSourceNode) {
+          this.audioFileSourceNode = this.mainAudioContext.createMediaElementSource(this.audioElement);
+          this.audioFileSourceNode.connect(this.mainAudioContext.destination);
+          this.audioFileSourceNode.connect(this.pitchDetectorAnalyserNode);
+          if(this.fftAnalyserNode) this.audioFileSourceNode.connect(this.fftAnalyserNode);
+      }
+        
       await this._playCurrentAudioElement();
       this._setActiveDrivingMechanism('audio');
+      this.isAudioFilePlaying = true;
+      this.isAudioFilePaused = false;
     } catch (e) {
+      alert(`Error processing audio file: ${file.name}. ${e.message}`);
       await this._nextTrack();
     } finally {
-      this.isLoadingTrack = false;
-      this._updateAudioFileUI();
+        this.isLoadingTrack = false;
+        this._updateAudioFileUI();
     }
   }
+
   async _playCurrentAudioElement() {
     if (!this.audioElement || !this.mainAudioContext) return;
     if (this.mainAudioContext.state === 'suspended') await this.mainAudioContext.resume();
     this.audioElement.currentTime = this.audioPlaybackOffset;
+
     if (this.bandSources) {
+      this._stopBPMAnalysisLoop(); // Stop any previous loops
       const { low, mid, high } = await this._createFrequencyBands(this.audioFileBuffer);
-      if (this.bandSources.low) this.bandSources.low.disconnect();
       this.bandSources.low = this.mainAudioContext.createBufferSource();
       this.bandSources.low.buffer = low;
       this.bandSources.low.connect(this.bpmAnalyzers.low.analyser);
       this.bandSources.low.start(0, this.audioPlaybackOffset);
 
-      if (this.bandSources.mid) this.bandSources.mid.disconnect();
       this.bandSources.mid = this.mainAudioContext.createBufferSource();
       this.bandSources.mid.buffer = mid;
       this.bandSources.mid.connect(this.bpmAnalyzers.mid.analyser);
       this.bandSources.mid.start(0, this.audioPlaybackOffset);
 
-      if (this.bandSources.high) this.bandSources.high.disconnect();
       this.bandSources.high = this.mainAudioContext.createBufferSource();
       this.bandSources.high.buffer = high;
       this.bandSources.high.connect(this.bpmAnalyzers.high.analyser);
       this.bandSources.high.start(0, this.audioPlaybackOffset);
     }
+
     await this.audioElement.play();
     this.isAudioFilePlaying = true;
     this.isAudioFilePaused = false;
     if (this.bandSources) this._startBPMAnalysisLoop();
   }
+
   _nextTrack() { this._loadAndPlayTrack((this.currentPlaylistIndex + 1) % this.playlistFiles.length); }
   _prevTrack() { this._loadAndPlayTrack((this.currentPlaylistIndex - 1 + this.playlistFiles.length) % this.playlistFiles.length); }
+
   async _stopLoadedAudioFilePlayback(fullReset = false) {
     this.isLoadingTrack = false;
     this._stopBPMAnalysisLoop();
@@ -1357,7 +1387,7 @@ class ChladniSimulator {
       if (this.audioElement.src && this.audioElement.src.startsWith('blob:')) {
         URL.revokeObjectURL(this.audioElement.src);
       }
-      this.audioElement.removeAttribute('src');
+      this.audioElement.removeAttribute('src'); 
       this.audioElement.load();
     }
     if (this.audioFileSourceNode) this.audioFileSourceNode.disconnect();
@@ -1373,6 +1403,7 @@ class ChladniSimulator {
     }
     this._updateAudioFileUI();
   }
+  
   async _togglePauseLoadedAudioFilePlayback() {
     if (!this.audioElement || !(this.isAudioFilePlaying || this.isAudioFilePaused)) return;
     if (this.isAudioFilePaused) {
@@ -1387,9 +1418,11 @@ class ChladniSimulator {
     }
     if (this.uiElements.toggleAudioPauseButton) this.uiElements.toggleAudioPauseButton.textContent = this.isAudioFilePaused ? "Продолжить" : "Пауза";
   }
+
   _updateAudioFileUI() {
     const hasFiles = this.playlistFiles.length > 0;
     const isPlayingOrPaused = this.isAudioFilePlaying || this.isAudioFilePaused;
+    
     const ui = this.uiElements;
     if (ui.playUploadedAudioButton) ui.playUploadedAudioButton.style.display = hasFiles && !isPlayingOrPaused ? 'block' : 'none';
     if (ui.stopAudioButton) ui.stopAudioButton.style.display = isPlayingOrPaused ? 'block' : 'none';
@@ -1398,11 +1431,13 @@ class ChladniSimulator {
     if (ui.prevTrackButton) ui.prevTrackButton.style.display = hasFiles && this.playlistFiles.length > 1 ? 'block' : 'none';
     if (ui.audioProgressSlider) ui.audioProgressSlider.style.display = isPlayingOrPaused ? 'block' : 'none';
     if (ui.audioTimeDisplay) ui.audioTimeDisplay.style.display = isPlayingOrPaused ? 'block' : 'none';
+    
     if (ui.audioInfoEl) {
-      if (isPlayingOrPaused) ui.audioInfoEl.textContent = `Трек: ${this.playlistFiles[this.currentPlaylistIndex].name}`;
-      else ui.audioInfoEl.textContent = hasFiles ? `${this.playlistFiles.length} трек(ов) в плейлисте` : 'Аудио не загружено';
+        if(isPlayingOrPaused) ui.audioInfoEl.textContent = `Трек: ${this.playlistFiles[this.currentPlaylistIndex].name}`;
+        else ui.audioInfoEl.textContent = hasFiles ? `${this.playlistFiles.length} трек(ов) в плейлисте` : 'Аудио не загружено';
     }
   }
+
   _updateAudioFileProgressControlsUI() {
     if (!this.audioElement || !isFinite(this.audioFileDuration) || this.audioFileDuration === 0) return;
     const currentTime = this.isAudioFilePaused ? this.audioPlaybackOffset : this.audioElement.currentTime;
@@ -1413,13 +1448,14 @@ class ChladniSimulator {
       this.uiElements.audioTimeDisplay.textContent = `${this._formatTimeMMSS(currentTime)} / ${this._formatTimeMMSS(this.audioFileDuration)}`;
     }
   }
+
   async _toggleMicrophoneInput() {
     if (this.isMicrophoneEnabled) {
-      if (this.microphoneStream) this.microphoneStream.getTracks().forEach(track => track.stop());
-      if (this.microphoneSourceNode) this.microphoneSourceNode.disconnect();
+      if(this.microphoneStream) this.microphoneStream.getTracks().forEach(track => track.stop());
+      if(this.microphoneSourceNode) this.microphoneSourceNode.disconnect();
       this.isMicrophoneEnabled = false;
       this._stopBPMAnalysisLoop();
-      if (this.drivingMechanism === 'microphone') this._setActiveDrivingMechanism('modal');
+      if(this.drivingMechanism === 'microphone') this._setActiveDrivingMechanism('modal');
     } else {
       try {
         await this._stopLoadedAudioFilePlayback(true);
@@ -1441,13 +1477,14 @@ class ChladniSimulator {
     }
     this._updateUIToggleButtons();
   }
+
   async _toggleDesktopAudio() {
     if (this.isDesktopAudioEnabled) {
-      if (this.desktopStream) this.desktopStream.getTracks().forEach(track => track.stop());
-      if (this.desktopAudioSourceNode) this.desktopAudioSourceNode.disconnect();
+      if(this.desktopStream) this.desktopStream.getTracks().forEach(track => track.stop());
+      if(this.desktopAudioSourceNode) this.desktopAudioSourceNode.disconnect();
       this.isDesktopAudioEnabled = false;
       this._stopBPMAnalysisLoop();
-      if (this.drivingMechanism === 'desktop_audio') this._setActiveDrivingMechanism('modal');
+      if(this.drivingMechanism === 'desktop_audio') this._setActiveDrivingMechanism('modal');
     } else {
       try {
         if (!navigator.mediaDevices.getDisplayMedia) throw new Error("getDisplayMedia not supported.");
@@ -1475,6 +1512,7 @@ class ChladniSimulator {
     }
     this._updateUIToggleButtons();
   }
+  
   _parseTrackInfoFromName(fileName) {
     let cleanedName = fileName.replace(/\.[^/.]+$/, "").replace(/_/g, ' ');
     cleanedName = cleanedName.replace(/^♫\s*/, '');
@@ -1494,10 +1532,15 @@ class ChladniSimulator {
     }
     return { artist, title };
   }
+
   async _findAndLoadLyrics(file, fetchID) {
     const lyricsEl = this.uiElements.lyricsInfoEl;
     if (lyricsEl) lyricsEl.textContent = 'Поиск субтитров...';
     this.currentSubtitles = [];
+    if (typeof jsmediatags === 'undefined') {
+        if(lyricsEl) lyricsEl.textContent = 'Библиотека для субтитров не найдена.';
+        return;
+    }
     try {
       const tags = await new Promise((res, rej) => jsmediatags.read(file, { onSuccess: res, onError: rej }));
       if (fetchID !== this.activeFetchID) return;
@@ -1525,6 +1568,7 @@ class ChladniSimulator {
       if (lyricsEl) lyricsEl.textContent = 'Не удалось найти метаданные для поиска.';
     }
   }
+
   async _fetchLyricsFromLrclib(artist, track, requestIndex) {
     if (this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Идет поиск текста в сети...';
     const url = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(track)}`;
@@ -1542,6 +1586,7 @@ class ChladniSimulator {
     } catch (e) { }
     if (this.activeFetchID === requestIndex && this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Субтитры не найдены.';
   }
+
   _parseLRC(lrcText) {
     if (!lrcText) return [];
     const lines = lrcText.split('\n');
@@ -1556,6 +1601,7 @@ class ChladniSimulator {
     });
     return subtitles.sort((a, b) => a.time - b.time);
   }
+
   _updateSubtitles() {
     const subContainer = this.uiElements.subtitleContainer;
     if (!this.isSubtitlesEnabled || !subContainer || !this.audioElement) {
@@ -1580,6 +1626,7 @@ class ChladniSimulator {
       subContainer.classList.toggle('visible', newText !== '');
     }
   }
+
   async _createFrequencyBands(originalBuffer) {
     if (!originalBuffer) return null;
     const offlineCtxOptions = { length: originalBuffer.length, sampleRate: originalBuffer.sampleRate, numberOfChannels: originalBuffer.numberOfChannels };
@@ -1607,6 +1654,7 @@ class ChladniSimulator {
       return null;
     }
   }
+
   _startBPMAnalysisLoop() {
     if (this.bpmUpdateIntervalId) clearInterval(this.bpmUpdateIntervalId);
     const sourceActive = (this.isAudioFilePlaying && !this.isAudioFilePaused) || this.isMicrophoneEnabled || this.isDesktopAudioEnabled;
@@ -1627,16 +1675,18 @@ class ChladniSimulator {
       }
     }, 80);
   }
+
   _stopBPMAnalysisLoop() {
     if (this.bpmUpdateIntervalId) {
       clearInterval(this.bpmUpdateIntervalId);
       this.bpmUpdateIntervalId = null;
     }
     if (this.bandSources) {
-      try { this.bandSources.low.stop(); this.bandSources.mid.stop(); this.bandSources.high.stop(); } catch (e) { }
+      try { if(this.bandSources.low) this.bandSources.low.stop(); if(this.bandSources.mid) this.bandSources.mid.stop(); if(this.bandSources.high) this.bandSources.high.stop(); } catch (e) { }
       this.bandSources = null;
     }
   }
+
   _updateAndAnalyzeBPM() {
     if (!this.mainAudioContext || this.mainAudioContext.state !== 'running') return;
     const currentTime = this.mainAudioContext.currentTime;
@@ -1661,6 +1711,7 @@ class ChladniSimulator {
     }
     this._calculateCombinedBPM();
   }
+  
   _getSpectralFlux(band) {
     if (!band.analyser || !this.mainAudioContext || this.mainAudioContext.state !== 'running') return 0;
     const bufferLength = band.analyser.frequencyBinCount;
@@ -1675,6 +1726,7 @@ class ChladniSimulator {
     band.previousData.set(band.frequencyData);
     return flux;
   }
+  
   _updateBPMThreshold(band) {
     const fluxHistoryForThreshold = band.history.slice(-50);
     if (fluxHistoryForThreshold && fluxHistoryForThreshold.length > 10) {
@@ -1687,6 +1739,7 @@ class ChladniSimulator {
       band.threshold = Math.max(30, band.threshold * 0.99);
     }
   }
+  
   _isLocalMaximum(fluxValue, history) {
     if (!history || history.length < 3) return false;
     const checkWindow = Math.min(Math.floor(history.length / 2), Math.floor(this.BPM_PEAK_DETECTION_WINDOW / 2));
@@ -1702,6 +1755,7 @@ class ChladniSimulator {
     }
     return isMax;
   }
+  
   _calculateCombinedBPM() {
     if (this.allDetectedBeats.length < 8) {
       if (this.uiElements.bpmConfidence) this.uiElements.bpmConfidence.textContent = 'ожидание...';
