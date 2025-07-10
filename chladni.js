@@ -6,7 +6,6 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 const FDM_FRAGMENT_SHADER = `
-  #define PI 3.141592653589793
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -61,7 +60,7 @@ const FDM_FRAGMENT_SHADER = `
                        2.0 * (u_ip1jp1 + u_ip1jm1 + u_im1jp1 + u_im1jm1) +
                        (u_ip2j + u_im2j + u_ijp2 + u_ijm2)) * inv_dx4;
     float excForce = 0.0;
-    float timeSine = sin(2.0 * PI * u_freq * u_time);
+    float timeSine = sin(2.0 * 3.141592653589793 * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
       float modalPattern = texture(u_modalPatternTexture, uv).r;
@@ -108,7 +107,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
     vec2 texelSizeDisp = 1.0 / vec2(textureSize(u_displacementTexture, 0));
     float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
     float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
-    vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
+    vec2 force = -2.0 * disp * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
       vec2 texelSizeParticle = 1.0 / resolution.xy;
       vec2 repulsionForce = vec2(0.0);
@@ -144,6 +143,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 const PARTICLE_VERTEX_SHADER = `
   #version 300 es
   in float instanceId;
+
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
