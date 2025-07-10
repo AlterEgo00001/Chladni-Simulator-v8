@@ -7,6 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
 const FDM_FRAGMENT_SHADER = `
   #define PI 3.141592653589793
+
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -108,7 +109,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
     vec2 texelSizeDisp = 1.0 / vec2(textureSize(u_displacementTexture, 0));
     float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
     float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
-    vec2 force = -2.0 * disp * disp * vec2(gradX, gradY) * u_forceMult;
+    vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
       vec2 texelSizeParticle = 1.0 / resolution.xy;
       vec2 repulsionForce = vec2(0.0);
@@ -142,9 +143,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 `;
 
 const PARTICLE_VERTEX_SHADER = `
-  #version 300 es
   in float instanceId;
-
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -185,14 +184,12 @@ const PARTICLE_VERTEX_SHADER = `
     vec3 scaledPosition = position * u_particleSize;
     v_worldPosition = finalOffset + scaledPosition;
     v_normal = normalize(position);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(v_worldPosition, 1.0);
+    vec4 mvPosition = modelViewMatrix * vec4(v_worldPosition, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
   }
 `;
 
 const PARTICLE_FRAGMENT_SHADER = `
-  #version 300 es
-  precision highp float;
-
   in vec3 v_worldPosition;
   in vec3 v_normal;
   in vec2 v_particleUV;
@@ -244,18 +241,18 @@ const GPU_GRID_SIZE_DEFAULT = 255;
 const GPU_FDM_STEPS_PER_FRAME_DEFAULT = 15;
 const GPU_PARTICLE_COUNT_DEFAULT = 16384;
 
-const PARTICLE_FORCE_BASE_DEFAULT = 1.5e6;
-const PARTICLE_DAMPING_BASE_DEFAULT = 0.95;
-const MAX_PARTICLE_SPEED_DEFAULT = 18.0;
+const PARTICLE_FORCE_BASE_DEFAULT = 2.5e6;
+const PARTICLE_DAMPING_BASE_DEFAULT = 0.96;
+const MAX_PARTICLE_SPEED_DEFAULT = 25.0;
 const ENABLE_REPULSION_DEFAULT = true;
-const REPULSION_RADIUS_DEFAULT = 0.15;
-const REPULSION_STRENGTH_DEFAULT = 0.005;
-const PARTICLE_RESTITUTION_DEFAULT = 0.5;
-const STUCK_PARTICLE_THRESHOLD_DEFAULT = 0.01;
+const REPULSION_RADIUS_DEFAULT = 0.18;
+const REPULSION_STRENGTH_DEFAULT = 0.008;
+const PARTICLE_RESTITUTION_DEFAULT = 0.4;
+const STUCK_PARTICLE_THRESHOLD_DEFAULT = 0.02;
 
 const MAX_VISUAL_AMPLITUDE_DEFAULT = 0.3;
 const VISUAL_DEFORMATION_SCALE_DEFAULT = 50.0;
-const VISUAL_PARTICLE_SIZE_DEFAULT = 0.049;
+const VISUAL_PARTICLE_SIZE_DEFAULT = 0.045;
 
 const EXC_BASE_AMP_DEFAULT = 2.0e4;
 const EXC_LOW_CUTOFF_DEFAULT = 100;
@@ -733,7 +730,7 @@ class ChladniSimulator {
     requestAnimationFrame(this._animateScene.bind(this));
     if (!this.isReady) return;
 
-    this.simulationTime += 1 / 60;
+    this.simulationTime += 1 / 60; // Fixed timestep for physics
     
     this.orbitControls.update();
     
