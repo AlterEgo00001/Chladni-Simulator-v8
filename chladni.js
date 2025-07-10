@@ -144,7 +144,6 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 const PARTICLE_VERTEX_SHADER = `
   #version 300 es
   in float instanceId;
-
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -733,7 +732,7 @@ class ChladniSimulator {
     requestAnimationFrame(this._animateScene.bind(this));
     if (!this.isReady) return;
 
-    this.simulationTime += 1 / 60; // Fixed timestep for physics
+    this.simulationTime += 1 / 60;
     
     this.orbitControls.update();
     
