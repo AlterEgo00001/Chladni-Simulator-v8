@@ -5,9 +5,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
-const FDM_FRAGMENT_SHADER = `
-  #define PI 3.141592653589793
+const FDM_FRAGMENT_SHADER = `#version 300 es
+  precision highp float;
 
+  uniform sampler2D u_fdmTexture_read;
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -21,31 +22,31 @@ const FDM_FRAGMENT_SHADER = `
   uniform int u_mParam;
   uniform int u_excMode;
 
+  out vec4 out_FragColor;
+
   float sample_boundary(vec2 uv, vec2 offset) {
     vec2 sample_uv = uv + offset;
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
-    float result = 0.0;
     if (length(sample_phys) > u_plateRadius) {
-      result = texture2D(u_fdmTexture_read, uv - offset).r;
+      return texture(u_fdmTexture_read, uv - offset).r;
     } else {
-      result = texture2D(u_fdmTexture_read, sample_uv).r;
+      return texture(u_fdmTexture_read, sample_uv).r;
     }
-    return result;
   }
 
   void main() {
-    vec2 uv = gl_FragCoord.xy / resolution.xy;
-    vec2 texelSize = 1.0 / resolution.xy;
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_fdmTexture_read, 0));
+    vec2 texelSize = 1.0 / vec2(textureSize(u_fdmTexture_read, 0));
     float physX = (uv.x - 0.5) * u_plateRadius * 2.0;
     float physY = (uv.y - 0.5) * u_plateRadius * 2.0;
     if (length(vec2(physX, physY)) > u_plateRadius) {
-      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+      out_FragColor = vec4(0.0);
       return;
     }
-    vec4 data = texture2D(u_fdmTexture_read, uv);
+    vec4 data = texture(u_fdmTexture_read, uv);
     float u_curr = data.r;
     float u_prev = data.g;
-    float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
+    float inv_dx4 = 1.0 / pow(u_dx, 4.0);
     float u_ip1j = sample_boundary(uv, vec2(0.0, texelSize.y));
     float u_im1j = sample_boundary(uv, vec2(0.0, -texelSize.y));
     float u_ijp1 = sample_boundary(uv, vec2(texelSize.x, 0.0));
@@ -62,10 +63,10 @@ const FDM_FRAGMENT_SHADER = `
                        2.0 * (u_ip1jp1 + u_ip1jm1 + u_im1jp1 + u_im1jm1) +
                        (u_ip2j + u_im2j + u_ijp2 + u_ijm2)) * inv_dx4;
     float excForce = 0.0;
-    float timeSine = sin(2.0 * PI * u_freq * u_time);
+    float timeSine = sin(2.0 * 3.141592653589793 * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
-      float modalPattern = texture2D(u_modalPatternTexture, uv).r;
+      float modalPattern = texture(u_modalPatternTexture, uv).r;
       excForce = u_excAmp * timeSine * modalPattern * cos(float(u_mParam) * theta);
     } else {
       vec2 centerUV = vec2(0.5, 0.5);
@@ -78,13 +79,15 @@ const FDM_FRAGMENT_SHADER = `
     float F_coeff = (u_dt * u_dt) / u_rho_h;
     float u_next = (2.0 * u_curr - u_prev) - K_coeff * biharmonic + F_coeff * excForce;
     u_next *= (1.0 - u_damp);
-    gl_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
+    out_FragColor = vec4(u_next, u_curr, 0.0, 0.0);
   }
 `;
 
-const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
+const PARTICLE_PHYSICS_FRAGMENT_SHADER = `#version 300 es
+  precision highp float;
+
+  uniform sampler2D u_particleTexture_read;
   uniform sampler2D u_displacementTexture;
-  uniform vec2 u_fdmResolution;
   uniform float u_plateRadius;
   uniform float u_plateWidth;
   uniform float u_dx;
@@ -96,29 +99,32 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_repulsionRadius;
   uniform float u_repulsionStrength;
   uniform float u_stuckThreshold;
+  
+  out vec4 out_FragColor;
+
   void main() {
-    vec2 uv = gl_FragCoord.xy / resolution.xy;
-    vec4 data = texture2D(u_particleTexture_read, uv);
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_particleTexture_read, 0));
+    vec4 data = texture(u_particleTexture_read, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
     if (pos.x > 900.0) {
-      gl_FragColor = vec4(pos, vel);
+      out_FragColor = vec4(pos, vel);
       return;
     }
     vec2 normPos = pos / u_plateWidth + 0.5;
-    float disp = texture2D(u_displacementTexture, normPos).r;
-    vec2 texelSizeDisp = 1.0 / u_fdmResolution;
-    float gradX = (texture2D(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture2D(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
-    float gradY = (texture2D(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture2D(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
+    float disp = texture(u_displacementTexture, normPos).r;
+    vec2 texelSizeDisp = 1.0 / vec2(textureSize(u_displacementTexture, 0));
+    float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
+    float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
-      vec2 texelSizeParticle = 1.0 / resolution.xy;
+      vec2 texelSizeParticle = 1.0 / vec2(textureSize(u_particleTexture_read, 0));
       vec2 repulsionForce = vec2(0.0);
       const int checks = 4;
       for (int i = 1; i <= checks; i++) {
         float angle = float(i) / float(checks) * 6.283185;
         vec2 neighborUV = uv + vec2(cos(angle), sin(angle)) * texelSizeParticle;
-        vec2 toNeighbor = texture2D(u_particleTexture_read, neighborUV).rg - pos;
+        vec2 toNeighbor = texture(u_particleTexture_read, neighborUV).rg - pos;
         float distSq = dot(toNeighbor, toNeighbor);
         if (distSq < u_repulsionRadius * u_repulsionRadius && distSq > 0.00001) {
           float dist = sqrt(distSq);
@@ -139,11 +145,13 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       pos = vec2(1001.0, 1001.0);
       vel = vec2(0.0, 0.0);
     }
-    gl_FragColor = vec4(pos, vel);
+    out_FragColor = vec4(pos, vel);
   }
 `;
 
 const PARTICLE_VERTEX_SHADER = `#version 300 es
+  precision highp float;
+
   in float instanceId;
   in vec3 position;
 
@@ -196,6 +204,7 @@ const PARTICLE_VERTEX_SHADER = `#version 300 es
 
 const PARTICLE_FRAGMENT_SHADER = `#version 300 es
   precision highp float;
+
   in vec3 v_worldPosition;
   in vec3 v_normal;
   in vec2 v_particleUV;
@@ -510,10 +519,14 @@ class ChladniSimulator {
     this._fillFDMTexture(fdmTexture, fdmTexSize);
     this.fdmVariable = this.gpuCompute.addVariable("u_fdmTexture_read", FDM_FRAGMENT_SHADER, fdmTexture);
     if (!this.fdmVariable) throw new Error("Failed to create FDM GPGPU variable. Check FDM shader for errors.");
+    this.fdmVariable.material.glslVersion = THREE.GLSL3;
+
     const particleTexture = this.gpuCompute.createTexture();
     this._fillParticleTexture(particleTexture, particleTexSize, particleTexSize);
     this.particleVariable = this.gpuCompute.addVariable("u_particleTexture_read", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
     if (!this.particleVariable) throw new Error("Failed to create Particle GPGPU variable. Check Particle Physics shader for errors.");
+    this.particleVariable.material.glslVersion = THREE.GLSL3;
+
     this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable]);
     this.gpuCompute.setVariableDependencies(this.particleVariable, [this.particleVariable, this.fdmVariable]);
     this.fdmVariable.material.uniforms['u_modalPatternTexture'] = { value: null };
@@ -529,7 +542,6 @@ class ChladniSimulator {
     this.fdmVariable.material.uniforms['u_mParam'] = { value: 0 };
     this.fdmVariable.material.uniforms['u_excMode'] = { value: 0 };
     this.particleVariable.material.uniforms['u_displacementTexture'] = { value: null };
-    this.particleVariable.material.uniforms['u_fdmResolution'] = { value: new THREE.Vector2(this.GRID_SIZE, this.GRID_SIZE) };
     this.particleVariable.material.uniforms['u_plateRadius'] = { value: this.PLATE_RADIUS };
     this.particleVariable.material.uniforms['u_plateWidth'] = { value: this.PLATE_RADIUS * 2.0 };
     this.particleVariable.material.uniforms['u_dx'] = { value: 0.0 };
@@ -753,7 +765,6 @@ class ChladniSimulator {
       this.fdmVariable.material.uniforms.u_modalPatternTexture.value = this.modalPatternTexture;
       this.particleVariable.material.uniforms.u_deltaTime.value = (1 / 60) * this.particleSimulationSpeedScale;
       this.particleVariable.material.uniforms.u_dx.value = dx;
-      this.particleVariable.material.uniforms.u_fdmResolution.value.set(this.GRID_SIZE, this.GRID_SIZE);
       this.particleVariable.material.uniforms.u_forceMult.value = this.PARTICLE_FORCE_BASE;
       this.particleVariable.material.uniforms.u_damping.value = this.PARTICLE_DAMPING_BASE;
       this.particleVariable.material.uniforms.u_restitution.value = this.PARTICLE_BOUNDARY_RESTITUTION;
@@ -1312,16 +1323,22 @@ class ChladniSimulator {
     if (this.mainAudioContext.state === 'suspended') await this.mainAudioContext.resume();
     this.audioElement.currentTime = this.audioPlaybackOffset;
     if (this.bandSources) {
+      const { low, mid, high } = await this._createFrequencyBands(this.audioFileBuffer);
+      if (this.bandSources.low) this.bandSources.low.disconnect();
       this.bandSources.low = this.mainAudioContext.createBufferSource();
-      this.bandSources.low.buffer = (await this._createFrequencyBands(this.audioFileBuffer)).low;
+      this.bandSources.low.buffer = low;
       this.bandSources.low.connect(this.bpmAnalyzers.low.analyser);
       this.bandSources.low.start(0, this.audioPlaybackOffset);
+
+      if (this.bandSources.mid) this.bandSources.mid.disconnect();
       this.bandSources.mid = this.mainAudioContext.createBufferSource();
-      this.bandSources.mid.buffer = (await this._createFrequencyBands(this.audioFileBuffer)).mid;
+      this.bandSources.mid.buffer = mid;
       this.bandSources.mid.connect(this.bpmAnalyzers.mid.analyser);
       this.bandSources.mid.start(0, this.audioPlaybackOffset);
+
+      if (this.bandSources.high) this.bandSources.high.disconnect();
       this.bandSources.high = this.mainAudioContext.createBufferSource();
-      this.bandSources.high.buffer = (await this._createFrequencyBands(this.audioFileBuffer)).high;
+      this.bandSources.high.buffer = high;
       this.bandSources.high.connect(this.bpmAnalyzers.high.analyser);
       this.bandSources.high.start(0, this.audioPlaybackOffset);
     }
@@ -1411,11 +1428,11 @@ class ChladniSimulator {
         if (this.pitchDetectorAnalyserNode) this.microphoneSourceNode.connect(this.pitchDetectorAnalyserNode);
         if (this.fftAnalyserNode) this.microphoneSourceNode.connect(this.fftAnalyserNode);
         if (this.bpmAnalyzers.low.analyser) {
-          const lowpass = this.mainAudioContext.createBiquadFilter();
-          lowpass.type = "lowpass";
-          lowpass.frequency.value = 250;
-          this.microphoneSourceNode.connect(lowpass);
-          lowpass.connect(this.bpmAnalyzers.low.analyser);
+            const lowpass = this.mainAudioContext.createBiquadFilter();
+            lowpass.type = "lowpass";
+            lowpass.frequency.value = 250;
+            this.microphoneSourceNode.connect(lowpass);
+            lowpass.connect(this.bpmAnalyzers.low.analyser);
         }
         this.isMicrophoneEnabled = true;
         this._startBPMAnalysisLoop();
@@ -1445,11 +1462,11 @@ class ChladniSimulator {
         if (this.pitchDetectorAnalyserNode) this.desktopAudioSourceNode.connect(this.pitchDetectorAnalyserNode);
         if (this.fftAnalyserNode) this.desktopAudioSourceNode.connect(this.fftAnalyserNode);
         if (this.bpmAnalyzers.low.analyser) {
-          const lowpass = this.mainAudioContext.createBiquadFilter();
-          lowpass.type = "lowpass";
-          lowpass.frequency.value = 250;
-          this.desktopAudioSourceNode.connect(lowpass);
-          lowpass.connect(this.bpmAnalyzers.low.analyser);
+            const lowpass = this.mainAudioContext.createBiquadFilter();
+            lowpass.type = "lowpass";
+            lowpass.frequency.value = 250;
+            this.desktopAudioSourceNode.connect(lowpass);
+            lowpass.connect(this.bpmAnalyzers.low.analyser);
         }
         this.isDesktopAudioEnabled = true;
         this._startBPMAnalysisLoop();
