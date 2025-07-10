@@ -6,6 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 const FDM_FRAGMENT_SHADER = `
+  #define PI 3.141592653589793
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -60,7 +61,7 @@ const FDM_FRAGMENT_SHADER = `
                        2.0 * (u_ip1jp1 + u_ip1jm1 + u_im1jp1 + u_im1jm1) +
                        (u_ip2j + u_im2j + u_ijp2 + u_ijm2)) * inv_dx4;
     float excForce = 0.0;
-    float timeSine = sin(2.0 * 3.141592653589793 * u_freq * u_time);
+    float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
       float modalPattern = texture(u_modalPatternTexture, uv).r;
@@ -243,18 +244,18 @@ const GPU_GRID_SIZE_DEFAULT = 255;
 const GPU_FDM_STEPS_PER_FRAME_DEFAULT = 15;
 const GPU_PARTICLE_COUNT_DEFAULT = 16384;
 
-const PARTICLE_FORCE_BASE_DEFAULT = 2.5e6;
-const PARTICLE_DAMPING_BASE_DEFAULT = 0.96;
-const MAX_PARTICLE_SPEED_DEFAULT = 25.0;
+const PARTICLE_FORCE_BASE_DEFAULT = 1.5e6;
+const PARTICLE_DAMPING_BASE_DEFAULT = 0.95;
+const MAX_PARTICLE_SPEED_DEFAULT = 18.0;
 const ENABLE_REPULSION_DEFAULT = true;
-const REPULSION_RADIUS_DEFAULT = 0.18;
-const REPULSION_STRENGTH_DEFAULT = 0.008;
-const PARTICLE_RESTITUTION_DEFAULT = 0.4;
-const STUCK_PARTICLE_THRESHOLD_DEFAULT = 0.02;
+const REPULSION_RADIUS_DEFAULT = 0.15;
+const REPULSION_STRENGTH_DEFAULT = 0.005;
+const PARTICLE_RESTITUTION_DEFAULT = 0.5;
+const STUCK_PARTICLE_THRESHOLD_DEFAULT = 0.01;
 
 const MAX_VISUAL_AMPLITUDE_DEFAULT = 0.3;
 const VISUAL_DEFORMATION_SCALE_DEFAULT = 50.0;
-const VISUAL_PARTICLE_SIZE_DEFAULT = 0.045;
+const VISUAL_PARTICLE_SIZE_DEFAULT = 0.049;
 
 const EXC_BASE_AMP_DEFAULT = 2.0e4;
 const EXC_LOW_CUTOFF_DEFAULT = 100;
