@@ -147,9 +147,6 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 const PARTICLE_VERTEX_SHADER = `#version 300 es
   precision highp float;
   in float instanceId;
-  in vec3 position;
-  uniform mat4 modelViewMatrix;
-  uniform mat4 projectionMatrix;
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -507,14 +504,12 @@ class ChladniSimulator {
     this._fillFDMTexture(fdmTexture, fdmTexSize);
     this.fdmVariable = this.gpuCompute.addVariable("u_fdmTexture_read", FDM_FRAGMENT_SHADER, fdmTexture);
     if (!this.fdmVariable) throw new Error("Failed to create FDM GPGPU variable. Check FDM shader for errors.");
-    this.fdmVariable.material.glslVersion = THREE.GLSL3;
-
+    
     const particleTexture = this.gpuCompute.createTexture();
     this._fillParticleTexture(particleTexture, particleTexSize, particleTexSize);
     this.particleVariable = this.gpuCompute.addVariable("u_particleTexture_read", PARTICLE_PHYSICS_FRAGMENT_SHADER, particleTexture);
     if (!this.particleVariable) throw new Error("Failed to create Particle GPGPU variable. Check Particle Physics shader for errors.");
-    this.particleVariable.material.glslVersion = THREE.GLSL3;
-
+    
     this.gpuCompute.setVariableDependencies(this.fdmVariable, [this.fdmVariable]);
     this.gpuCompute.setVariableDependencies(this.particleVariable, [this.particleVariable, this.fdmVariable]);
     this.fdmVariable.material.uniforms['u_modalPatternTexture'] = { value: null };
@@ -530,6 +525,7 @@ class ChladniSimulator {
     this.fdmVariable.material.uniforms['u_mParam'] = { value: 0 };
     this.fdmVariable.material.uniforms['u_excMode'] = { value: 0 };
     this.particleVariable.material.uniforms['u_displacementTexture'] = { value: null };
+    this.particleVariable.material.uniforms['u_fdmResolution'] = { value: new THREE.Vector2(this.GRID_SIZE, this.GRID_SIZE) };
     this.particleVariable.material.uniforms['u_plateRadius'] = { value: this.PLATE_RADIUS };
     this.particleVariable.material.uniforms['u_plateWidth'] = { value: this.PLATE_RADIUS * 2.0 };
     this.particleVariable.material.uniforms['u_dx'] = { value: 0.0 };
@@ -753,6 +749,7 @@ class ChladniSimulator {
       this.fdmVariable.material.uniforms.u_modalPatternTexture.value = this.modalPatternTexture;
       this.particleVariable.material.uniforms.u_deltaTime.value = (1 / 60) * this.particleSimulationSpeedScale;
       this.particleVariable.material.uniforms.u_dx.value = dx;
+      this.particleVariable.material.uniforms.u_fdmResolution.value.set(this.GRID_SIZE, this.GRID_SIZE);
       this.particleVariable.material.uniforms.u_forceMult.value = this.PARTICLE_FORCE_BASE;
       this.particleVariable.material.uniforms.u_damping.value = this.PARTICLE_DAMPING_BASE;
       this.particleVariable.material.uniforms.u_restitution.value = this.PARTICLE_BOUNDARY_RESTITUTION;
