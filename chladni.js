@@ -26,9 +26,9 @@ const FDM_FRAGMENT_SHADER = `
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
     float result = 0.0;
     if (length(sample_phys) > u_plateRadius) {
-      result = texture(u_fdmTexture_read, uv - offset).r;
+      result = texture2D(u_fdmTexture_read, uv - offset).r;
     } else {
-      result = texture(u_fdmTexture_read, sample_uv).r;
+      result = texture2D(u_fdmTexture_read, sample_uv).r;
     }
     return result;
   }
@@ -42,7 +42,7 @@ const FDM_FRAGMENT_SHADER = `
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-    vec4 data = texture(u_fdmTexture_read, uv);
+    vec4 data = texture2D(u_fdmTexture_read, uv);
     float u_curr = data.r;
     float u_prev = data.g;
     float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
@@ -65,7 +65,7 @@ const FDM_FRAGMENT_SHADER = `
     float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
-      float modalPattern = texture(u_modalPatternTexture, uv).r;
+      float modalPattern = texture2D(u_modalPatternTexture, uv).r;
       excForce = u_excAmp * timeSine * modalPattern * cos(float(u_mParam) * theta);
     } else {
       vec2 centerUV = vec2(0.5, 0.5);
@@ -98,7 +98,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_stuckThreshold;
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
-    vec4 data = texture(u_particleTexture_read, uv);
+    vec4 data = texture2D(u_particleTexture_read, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
     if (pos.x > 900.0) {
@@ -106,10 +106,10 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       return;
     }
     vec2 normPos = pos / u_plateWidth + 0.5;
-    float disp = texture(u_displacementTexture, normPos).r;
+    float disp = texture2D(u_displacementTexture, normPos).r;
     vec2 texelSizeDisp = 1.0 / u_fdmResolution;
-    float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
-    float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
+    float gradX = (texture2D(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture2D(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
+    float gradY = (texture2D(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture2D(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
       vec2 texelSizeParticle = 1.0 / resolution.xy;
@@ -118,7 +118,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       for (int i = 1; i <= checks; i++) {
         float angle = float(i) / float(checks) * 6.283185;
         vec2 neighborUV = uv + vec2(cos(angle), sin(angle)) * texelSizeParticle;
-        vec2 toNeighbor = texture(u_particleTexture_read, neighborUV).rg - pos;
+        vec2 toNeighbor = texture2D(u_particleTexture_read, neighborUV).rg - pos;
         float distSq = dot(toNeighbor, toNeighbor);
         if (distSq < u_repulsionRadius * u_repulsionRadius && distSq > 0.00001) {
           float dist = sqrt(distSq);
@@ -145,6 +145,10 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 
 const PARTICLE_VERTEX_SHADER = `#version 300 es
   in float instanceId;
+  in vec3 position;
+
+  uniform mat4 modelViewMatrix;
+  uniform mat4 projectionMatrix;
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -191,6 +195,7 @@ const PARTICLE_VERTEX_SHADER = `#version 300 es
 `;
 
 const PARTICLE_FRAGMENT_SHADER = `#version 300 es
+  precision highp float;
   in vec3 v_worldPosition;
   in vec3 v_normal;
   in vec2 v_particleUV;
@@ -382,6 +387,7 @@ class ChladniSimulator {
     try {
       this._mainInitialization();
     } catch (error) {
+      console.error(error);
       document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center; font-family: sans-serif;"><h1>Критическая ошибка</h1><p>Не удалось инициализировать симулятор. Проверьте консоль разработчика (F12) для получения подробной информации.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
     }
   }
@@ -955,7 +961,7 @@ class ChladniSimulator {
       if (this.fdmVariable) this.fdmVariable.material.uniforms.u_excMode.value = 1;
     }
     const newGridSize = this._getOptimalGridSizeForFrequency(this.actualAppliedFrequency);
-    if (newGridSize !== this.GRID_SIZE) {
+    if (Math.abs(newGridSize - this.GRID_SIZE) > 2) {
       this.GRID_SIZE = newGridSize;
       this._reinitGPUSimulation();
       return;
@@ -1017,9 +1023,9 @@ class ChladniSimulator {
     const newVal = isCheckbox ? value : this._parseInputNumber(value, this[paramName], isInt);
     if (this[paramName] === newVal && !isCheckbox) return;
     let needsGpuReinit = false;
-    if (paramName === 'GRID_SIZE') {
+    if (paramName === 'GRID_SIZE' || paramName === 'MIN_GRID_SIZE' || paramName === 'MAX_GRID_SIZE') {
       const roundedVal = this._roundToOddInteger(newVal);
-      if (this.GRID_SIZE !== roundedVal) { this.GRID_SIZE = roundedVal; needsGpuReinit = true; }
+      if (this[paramName] !== roundedVal) { this[paramName] = roundedVal; needsGpuReinit = true; }
     } else if (paramName === 'MAX_PARTICLE_COUNT') {
       if (this.MAX_PARTICLE_COUNT !== newVal) {
         this.MAX_PARTICLE_COUNT = newVal;
@@ -1405,11 +1411,11 @@ class ChladniSimulator {
         if (this.pitchDetectorAnalyserNode) this.microphoneSourceNode.connect(this.pitchDetectorAnalyserNode);
         if (this.fftAnalyserNode) this.microphoneSourceNode.connect(this.fftAnalyserNode);
         if (this.bpmAnalyzers.low.analyser) {
-            const lowpass = this.mainAudioContext.createBiquadFilter();
-            lowpass.type = "lowpass";
-            lowpass.frequency.value = 250;
-            this.microphoneSourceNode.connect(lowpass);
-            lowpass.connect(this.bpmAnalyzers.low.analyser);
+          const lowpass = this.mainAudioContext.createBiquadFilter();
+          lowpass.type = "lowpass";
+          lowpass.frequency.value = 250;
+          this.microphoneSourceNode.connect(lowpass);
+          lowpass.connect(this.bpmAnalyzers.low.analyser);
         }
         this.isMicrophoneEnabled = true;
         this._startBPMAnalysisLoop();
@@ -1439,11 +1445,11 @@ class ChladniSimulator {
         if (this.pitchDetectorAnalyserNode) this.desktopAudioSourceNode.connect(this.pitchDetectorAnalyserNode);
         if (this.fftAnalyserNode) this.desktopAudioSourceNode.connect(this.fftAnalyserNode);
         if (this.bpmAnalyzers.low.analyser) {
-            const lowpass = this.mainAudioContext.createBiquadFilter();
-            lowpass.type = "lowpass";
-            lowpass.frequency.value = 250;
-            this.desktopAudioSourceNode.connect(lowpass);
-            lowpass.connect(this.bpmAnalyzers.low.analyser);
+          const lowpass = this.mainAudioContext.createBiquadFilter();
+          lowpass.type = "lowpass";
+          lowpass.frequency.value = 250;
+          this.desktopAudioSourceNode.connect(lowpass);
+          lowpass.connect(this.bpmAnalyzers.low.analyser);
         }
         this.isDesktopAudioEnabled = true;
         this._startBPMAnalysisLoop();
@@ -1520,6 +1526,7 @@ class ChladniSimulator {
     if (this.activeFetchID === requestIndex && this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Субтитры не найдены.';
   }
   _parseLRC(lrcText) {
+    if (!lrcText) return [];
     const lines = lrcText.split('\n');
     const subtitles = [];
     lines.forEach(line => {
@@ -1756,6 +1763,7 @@ async function main() {
     const besselRootsData = await response.json();
     new ChladniSimulator(besselRootsData);
   } catch (error) {
+    console.error("Critical boot error:", error);
     document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center; font-family: sans-serif;"><h1>Критическая ошибка</h1><p>Не удалось загрузить необходимые для работы данные. Проверьте консоль.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
   }
 }
