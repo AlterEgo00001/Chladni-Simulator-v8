@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 
 const FDM_FRAGMENT_SHADER = `
   #define PI 3.141592653589793
-
+  uniform sampler2D u_fdmTexture_read;
   uniform sampler2D u_modalPatternTexture;
   uniform float u_time;
   uniform float u_freq;
@@ -26,9 +26,9 @@ const FDM_FRAGMENT_SHADER = `
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
     float result = 0.0;
     if (length(sample_phys) > u_plateRadius) {
-      result = texture(u_fdmTexture_read, uv - offset).r;
+      result = texture2D(u_fdmTexture_read, uv - offset).r;
     } else {
-      result = texture(u_fdmTexture_read, sample_uv).r;
+      result = texture2D(u_fdmTexture_read, sample_uv).r;
     }
     return result;
   }
@@ -42,7 +42,7 @@ const FDM_FRAGMENT_SHADER = `
       gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
-    vec4 data = texture(u_fdmTexture_read, uv);
+    vec4 data = texture2D(u_fdmTexture_read, uv);
     float u_curr = data.r;
     float u_prev = data.g;
     float inv_dx4 = 1.0 / (u_dx * u_dx * u_dx * u_dx);
@@ -65,7 +65,7 @@ const FDM_FRAGMENT_SHADER = `
     float timeSine = sin(2.0 * PI * u_freq * u_time);
     if (u_excMode == 0) {
       float theta = atan(physY, physX);
-      float modalPattern = texture(u_modalPatternTexture, uv).r;
+      float modalPattern = texture2D(u_modalPatternTexture, uv).r;
       excForce = u_excAmp * timeSine * modalPattern * cos(float(u_mParam) * theta);
     } else {
       vec2 centerUV = vec2(0.5, 0.5);
@@ -83,7 +83,9 @@ const FDM_FRAGMENT_SHADER = `
 `;
 
 const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
+  uniform sampler2D u_particleTexture_read;
   uniform sampler2D u_displacementTexture;
+  uniform vec2 u_fdmResolution;
   uniform float u_plateRadius;
   uniform float u_plateWidth;
   uniform float u_dx;
@@ -95,9 +97,10 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
   uniform float u_repulsionRadius;
   uniform float u_repulsionStrength;
   uniform float u_stuckThreshold;
+
   void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
-    vec4 data = texture(u_particleTexture_read, uv);
+    vec4 data = texture2D(u_particleTexture_read, uv);
     vec2 pos = data.rg;
     vec2 vel = data.ba;
     if (pos.x > 900.0) {
@@ -105,10 +108,10 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       return;
     }
     vec2 normPos = pos / u_plateWidth + 0.5;
-    float disp = texture(u_displacementTexture, normPos).r;
-    vec2 texelSizeDisp = 1.0 / vec2(textureSize(u_displacementTexture, 0));
-    float gradX = (texture(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
-    float gradY = (texture(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
+    float disp = texture2D(u_displacementTexture, normPos).r;
+    vec2 texelSizeDisp = 1.0 / u_fdmResolution;
+    float gradX = (texture2D(u_displacementTexture, normPos + vec2(texelSizeDisp.x, 0.0)).r - texture2D(u_displacementTexture, normPos - vec2(texelSizeDisp.x, 0.0)).r) / (2.0 * u_dx);
+    float gradY = (texture2D(u_displacementTexture, normPos + vec2(0.0, texelSizeDisp.y)).r - texture2D(u_displacementTexture, normPos - vec2(0.0, texelSizeDisp.y)).r) / (2.0 * u_dx);
     vec2 force = -2.0 * disp * vec2(gradX, gradY) * u_forceMult;
     if (u_repulsionStrength > 0.0 && u_repulsionRadius > 0.0) {
       vec2 texelSizeParticle = 1.0 / resolution.xy;
@@ -117,7 +120,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
       for (int i = 1; i <= checks; i++) {
         float angle = float(i) / float(checks) * 6.283185;
         vec2 neighborUV = uv + vec2(cos(angle), sin(angle)) * texelSizeParticle;
-        vec2 toNeighbor = texture(u_particleTexture_read, neighborUV).rg - pos;
+        vec2 toNeighbor = texture2D(u_particleTexture_read, neighborUV).rg - pos;
         float distSq = dot(toNeighbor, toNeighbor);
         if (distSq < u_repulsionRadius * u_repulsionRadius && distSq > 0.00001) {
           float dist = sqrt(distSq);
@@ -204,6 +207,7 @@ const PARTICLE_FRAGMENT_SHADER = `
   uniform float u_maxSpeedForColor;
   uniform vec3 u_coldColor;
   uniform vec3 u_hotColor;
+
   void main() {
     vec3 baseColor;
     if (u_colorMode > 0.5) {
@@ -236,7 +240,9 @@ const PLATE_THICKNESS_DEFAULT = 0.002;
 const PLATE_DENSITY_DEFAULT = 7850;
 const E_MODULUS_DEFAULT = 200e9;
 const POISSON_RATIO_DEFAULT = 0.3;
-const GPU_GRID_SIZE_DEFAULT = 255;
+const GPU_GRID_SIZE_DEFAULT = 151;
+const MIN_GRID_SIZE_DEFAULT = 33;
+const MAX_GRID_SIZE_DEFAULT = 511;
 const GPU_FDM_STEPS_PER_FRAME_DEFAULT = 15;
 const GPU_PARTICLE_COUNT_DEFAULT = 16384;
 const PARTICLE_FORCE_BASE_DEFAULT = 2.5e6;
@@ -266,8 +272,11 @@ const PITCH_MAX_FREQUENCY_HZ = 12000;
 const PITCH_UPDATE_INTERVAL_SECONDS = 0.03;
 const PITCH_CHANGE_THRESHOLD_HZ = 8.9;
 const PITCH_SMOOTHING_FACTOR = 0.15;
-const BPM_UPDATE_INTERVAL_SECONDS = 0.5;
-const BPM_ANALYSIS_SAMPLE_RATE = 1.0 / PITCH_UPDATE_INTERVAL_SECONDS;
+const MAX_AUDIO_DURATION_FOR_MULTIBAND_S = 1800;
+const BPM_LOW_BAND_WEIGHT = 3.0;
+const BPM_MID_BAND_WEIGHT = 1.5;
+const BPM_HIGH_BAND_WEIGHT = 1.2;
+const BPM_PEAK_DETECTION_WINDOW_DEFAULT = 10;
 const NOTE_NAMES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const NOTE_TO_MIDI_NUMBER_OFFSET = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
 
@@ -275,6 +284,7 @@ class ChladniSimulator {
   constructor(besselRootsTable) {
     this.besselRootsTable = besselRootsTable;
     this.isReady = false;
+    this.isLoadingTrack = false;
     this.PLATE_RADIUS = PLATE_RADIUS_DEFAULT;
     this.PLATE_THICKNESS = PLATE_THICKNESS_DEFAULT;
     this.PLATE_DENSITY = PLATE_DENSITY_DEFAULT;
@@ -293,6 +303,8 @@ class ChladniSimulator {
     this.PARTICLE_BOUNDARY_RESTITUTION = PARTICLE_RESTITUTION_DEFAULT;
     this.STUCK_PARTICLE_THRESHOLD = STUCK_PARTICLE_THRESHOLD_DEFAULT;
     this.GRID_SIZE = GPU_GRID_SIZE_DEFAULT;
+    this.MIN_GRID_SIZE = MIN_GRID_SIZE_DEFAULT;
+    this.MAX_GRID_SIZE = MAX_GRID_SIZE_DEFAULT;
     this.FDM_STEPS_PER_FRAME = GPU_FDM_STEPS_PER_FRAME_DEFAULT;
     this.FDM_DAMPING_FACTOR = 0.000050;
     this.MAX_VISUAL_AMPLITUDE = MAX_VISUAL_AMPLITUDE_DEFAULT;
@@ -332,24 +344,31 @@ class ChladniSimulator {
     this.isGeneratedSoundEnabled = false;
     this.playlistFiles = [];
     this.currentPlaylistIndex = -1;
-    this.audioElement = this._createAudioElement();
+    this.audioElement = null;
     this.audioFileSourceNode = null;
+    this.audioFileBuffer = null;
     this.isAudioFilePlaying = false;
     this.isAudioFilePaused = false;
     this.audioFileDuration = 0;
+    this.audioPlaybackOffset = 0;
     this.subtitleContainer = null;
     this.currentSubtitles = [];
     this.activeFetchID = 0;
     this.pitchDetectorAnalyserNode = null;
     this.pitchDetectorSignalBuffer = null;
-    this.fftAnalyserNode = null;
-    this.frequencyData = null;
+    this.MIN_SAMPLES_FOR_PITCH_DETECTION = 0;
+    this.MAX_SAMPLES_FOR_PITCH_DETECTION = 0;
     this.lastPitchUpdateTime = 0;
     this.smoothedPitchFrequency = 273;
-    this.onsetHistory = [];
-    this.onsetHistoryMaxLength = 300;
-    this.lastBPM = 0;
-    this.lastBPMUpdateTime = 0;
+    this.lastStablePitchFrequency = 0;
+    this.bpmAnalyzers = { low: { analyser: null, history: [], previousData: null, threshold: 100 }, mid: { analyser: null, history: [], previousData: null, threshold: 100 }, high: { analyser: null, history: [], previousData: null, threshold: 100 } };
+    this.bandSources = null;
+    this.allDetectedBeats = [];
+    this.currentBPM = 120;
+    this.bpmUpdateIntervalId = null;
+    this.BPM_PEAK_DETECTION_WINDOW = BPM_PEAK_DETECTION_WINDOW_DEFAULT;
+    this.fftAnalyserNode = null;
+    this.frequencyData = null;
     this.isMicrophoneEnabled = false;
     this.microphoneStream = null;
     this.microphoneSourceNode = null;
@@ -364,10 +383,10 @@ class ChladniSimulator {
     this.defaultAdvancedSettings = {};
     this.besselZerosCache = {};
     try {
-        this._mainInitialization();
+      this._mainInitialization();
     } catch (error) {
-        console.error("Critical error during main initialization:", error);
-        document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center; font-family: sans-serif;"><h1>Критическая ошибка</h1><p>Не удалось инициализировать симулятор. Проверьте консоль разработчика (F12) для получения подробной информации.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
+      console.error(error);
+      document.body.innerHTML = `<div style="color: #e06c75; background-color:#282c34; padding: 20px; text-align: center; font-family: sans-serif;"><h1>Критическая ошибка</h1><p>Не удалось инициализировать симулятор. Проверьте консоль разработчика (F12) для получения подробной информации.</p><p style="margin-top: 10px; color: #abb2bf;">${error.message}</p></div>`;
     }
   }
   _roundToOddInteger(number) {
@@ -385,12 +404,44 @@ class ChladniSimulator {
     const seconds = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
     return `${minutes}:${seconds}`;
   }
-  _besselJ_lib(order, xValue) {
-    if (typeof BESSEL === 'undefined' || typeof BESSEL.besselj !== 'function') {
-      console.warn("Bessel library not found.");
-      return 0;
+  _factorial(n) {
+    if (n < 0) return Infinity;
+    if (n === 0) return 1;
+    if (n > 170) return Infinity;
+    let result = 1;
+    for (let i = n; i > 0; i--) result *= i;
+    return result;
+  }
+  _besselJ_fallback(order, xValue) {
+    const m = Math.abs(order);
+    if (xValue < 0) return Number.isInteger(m) ? ((m % 2 === 0) ? this._besselJ_fallback(m, -xValue) : -this._besselJ_fallback(m, -xValue)) : NaN;
+    if (xValue === 0) return m === 0 ? 1.0 : 0.0;
+    if (xValue > 30 && xValue > m * 1.5) return Math.sqrt(2 / (Math.PI * xValue)) * Math.cos(xValue - (m * Math.PI / 2) - (Math.PI / 4));
+    let sum = 0;
+    const termsLimit = Math.max(25, Math.floor(xValue + 15 + m * 0.75));
+    for (let k = 0; k <= termsLimit; k++) {
+      if (m + k > 170) break;
+      const num = Math.pow(-1, k) * Math.pow(xValue / 2, m + 2 * k);
+      const den_k_fact = this._factorial(k);
+      const den_m_plus_k_fact = this._factorial(m + k);
+      if (den_k_fact === Infinity || den_m_plus_k_fact === Infinity || den_k_fact === 0 || den_m_plus_k_fact === 0) continue;
+      const term = num / (den_k_fact * den_m_plus_k_fact);
+      if (!isFinite(term)) continue;
+      sum += term;
     }
-    return BESSEL.besselj(parseFloat(xValue), parseFloat(order));
+    return sum;
+  }
+  _besselJ_lib(order, xValue) {
+    try {
+      const pO = parseFloat(order);
+      const pX = parseFloat(xValue);
+      if (isNaN(pO) || isNaN(pX) || typeof BESSEL === 'undefined' || typeof BESSEL.besselj !== 'function') {
+        return this._besselJ_fallback(order, xValue);
+      }
+      return BESSEL.besselj(pX, pO);
+    } catch (e) {
+      return this._besselJ_fallback(order, xValue);
+    }
   }
   _getBesselZero(mOrder, nthRootOneIndexed) {
     const m = Math.round(mOrder);
@@ -414,6 +465,16 @@ class ChladniSimulator {
     const freq = (Math.pow(lambda_mn / this.PLATE_RADIUS, 2) / (2 * Math.PI)) * Math.sqrt(this.D_FLEXURAL_RIGIDITY / this.RHO_H_PLATE_SPECIFIC_DENSITY);
     return Math.max(1, (isFinite(freq) ? freq : 20));
   }
+  _getOptimalGridSizeForFrequency(frequency) {
+    let targetGridSize;
+    const baseFreqMin = 200;
+    const freqMaxGrid = 7500;
+    const effFreq = Math.max(1, frequency);
+    if (effFreq <= baseFreqMin) targetGridSize = this.MIN_GRID_SIZE;
+    else if (effFreq >= freqMaxGrid) targetGridSize = this.MAX_GRID_SIZE;
+    else targetGridSize = this.MIN_GRID_SIZE + ((effFreq - baseFreqMin) / (freqMaxGrid - baseFreqMin)) * (this.MAX_GRID_SIZE - this.MIN_GRID_SIZE);
+    return this._roundToOddInteger(Math.max(this.MIN_GRID_SIZE, Math.min(this.MAX_GRID_SIZE, Math.floor(targetGridSize))));
+  }
   _mainInitialization() {
     this._mapUIElements();
     this._storeDefaultSimulationSettings();
@@ -424,8 +485,8 @@ class ChladniSimulator {
     this._setupEventListeners();
     this._createPianoKeys();
     this._resetAllSettingsToDefaults(false);
-    const gpuWarning = document.createElement('p'); 
-    gpuWarning.textContent = 'Симуляция на GPU (WebGL 2.0)'; 
+    const gpuWarning = document.createElement('p');
+    gpuWarning.textContent = 'Симуляция на GPU (WebGL 2.0)';
     gpuWarning.style.cssText = 'color: #98c379; font-size: 12px; text-align: center; margin: 5px 0; padding: 3px; border: 1px solid #98c379; border-radius: 4px;';
     if (this.uiElements.controls) {
       const fs = this.uiElements.controls.querySelector('fieldset');
@@ -466,6 +527,7 @@ class ChladniSimulator {
     this.fdmVariable.material.uniforms['u_mParam'] = { value: 0 };
     this.fdmVariable.material.uniforms['u_excMode'] = { value: 0 };
     this.particleVariable.material.uniforms['u_displacementTexture'] = { value: null };
+    this.particleVariable.material.uniforms['u_fdmResolution'] = { value: new THREE.Vector2(this.GRID_SIZE, this.GRID_SIZE) };
     this.particleVariable.material.uniforms['u_plateRadius'] = { value: this.PLATE_RADIUS };
     this.particleVariable.material.uniforms['u_plateWidth'] = { value: this.PLATE_RADIUS * 2.0 };
     this.particleVariable.material.uniforms['u_dx'] = { value: 0.0 };
@@ -484,7 +546,6 @@ class ChladniSimulator {
   }
   _reinitGPUSimulation() {
     if (this.gpuCompute) {
-        Object.values(this.gpuCompute.renderTargets).forEach(rt => rt.dispose());
         this.gpuCompute.dispose();
     }
     this._setupGPUSimulation();
@@ -501,6 +562,9 @@ class ChladniSimulator {
   }
   _fillParticleTexture(texture) {
     const arr = texture.image.data;
+    const texSize = Math.ceil(Math.sqrt(this.MAX_PARTICLE_COUNT));
+    texture.image.width = texSize;
+    texture.image.height = texSize;
     for (let i = 0; i < arr.length; i += 4) {
       const r = Math.sqrt(Math.random()) * this.PLATE_RADIUS;
       const angle = Math.random() * 2 * Math.PI;
@@ -575,12 +639,18 @@ class ChladniSimulator {
     this.groundPlane.receiveShadow = this.enableShadows;
     this.groundPlane.visible = this.enableShadows;
     this.scene.add(this.groundPlane);
+    const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
+        type: THREE.HalfFloatType,
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+    });
+    this.composer = new EffectComposer(this.renderer, renderTarget);
     const renderScene = new RenderPass(this.scene, this.camera);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85);
     bloomPass.threshold = 0.1;
     bloomPass.strength = 0.3;
     bloomPass.radius = 0.3;
-    this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(renderScene);
     this.composer.addPass(bloomPass);
   }
@@ -631,8 +701,9 @@ class ChladniSimulator {
     this._updatePhysicalConstants();
     this._setupPlateParametersForCurrentMode();
     this._updateModalPatternTexture();
+    const fdmTexSize = this.GRID_SIZE;
     const fdmTexture = this.gpuCompute.createTexture();
-    this._fillFDMTexture(fdmTexture, this.GRID_SIZE);
+    this._fillFDMTexture(fdmTexture, fdmTexSize);
     this.gpuCompute.renderTexture(fdmTexture, this.fdmVariable.renderTargets[0]);
     this.gpuCompute.renderTexture(fdmTexture, this.fdmVariable.renderTargets[1]);
     fdmTexture.dispose();
@@ -679,6 +750,7 @@ class ChladniSimulator {
       this.fdmVariable.material.uniforms.u_modalPatternTexture.value = this.modalPatternTexture;
       this.particleVariable.material.uniforms.u_deltaTime.value = (1 / 60) * this.particleSimulationSpeedScale;
       this.particleVariable.material.uniforms.u_dx.value = dx;
+      this.particleVariable.material.uniforms.u_fdmResolution.value.set(this.GRID_SIZE, this.GRID_SIZE);
       this.particleVariable.material.uniforms.u_forceMult.value = this.PARTICLE_FORCE_BASE;
       this.particleVariable.material.uniforms.u_damping.value = this.PARTICLE_DAMPING_BASE;
       this.particleVariable.material.uniforms.u_restitution.value = this.PARTICLE_BOUNDARY_RESTITUTION;
@@ -701,10 +773,6 @@ class ChladniSimulator {
       uniforms.u_particleSize.value = this.VISUAL_PARTICLE_SIZE;
     }
     this._updateAudioProcessing();
-    if (this.mainAudioContext?.state === 'running' && this.simulationTime - this.lastBPMUpdateTime > BPM_UPDATE_INTERVAL_SECONDS) {
-      this._updateBPM();
-      this.lastBPMUpdateTime = this.simulationTime;
-    }
     this.composer.render();
   }
   _updateAudioProcessing() {
@@ -719,10 +787,20 @@ class ChladniSimulator {
             this.pitchDetectorAnalyserNode.getFloatTimeDomainData(this.pitchDetectorSignalBuffer);
             const detectedFreq = this._autoCorrelatePitch(this.pitchDetectorSignalBuffer, this.mainAudioContext.sampleRate);
             if (detectedFreq !== -1) {
+              if (this.lastStablePitchFrequency === 0) this.lastStablePitchFrequency = detectedFreq;
+              this.lastStablePitchFrequency = THREE.MathUtils.lerp(this.lastStablePitchFrequency, detectedFreq, 0.3);
               this.smoothedPitchFrequency = THREE.MathUtils.lerp(this.smoothedPitchFrequency, detectedFreq, PITCH_SMOOTHING_FACTOR);
-              if (Math.abs(this.actualAppliedFrequency - this.smoothedPitchFrequency) > PITCH_CHANGE_THRESHOLD_HZ) {
+              const freqDiff = Math.abs(this.actualAppliedFrequency - this.smoothedPitchFrequency);
+              const dynamicThreshold = PITCH_CHANGE_THRESHOLD_HZ + (this.actualAppliedFrequency * 0.02);
+              if (freqDiff > dynamicThreshold) {
                 this.actualAppliedFrequency = this.smoothedPitchFrequency;
-                this._resetFullSimulationState();
+                const newGridSize = this._getOptimalGridSizeForFrequency(this.actualAppliedFrequency);
+                if (newGridSize !== this.GRID_SIZE) {
+                  this.GRID_SIZE = newGridSize;
+                  this._reinitGPUSimulation();
+                } else {
+                  this._resetFullSimulationState();
+                }
               } else {
                 this.actualAppliedFrequency = this.smoothedPitchFrequency;
               }
@@ -730,16 +808,8 @@ class ChladniSimulator {
               this._updateFrequencyControlsUI();
               this._updatePitchDetectorUI(detectedFreq);
             }
-          } catch (e) { console.warn("Error processing pitch data:", e); }
+          } catch (e) { }
         }
-      }
-      if (this.fftAnalyserNode) {
-        const timeDomainData = new Float32Array(this.fftAnalyserNode.fftSize);
-        this.fftAnalyserNode.getFloatTimeDomainData(timeDomainData);
-        let sumSq = 0;
-        for (let i = 0; i < timeDomainData.length; i++) sumSq += timeDomainData[i] * timeDomainData[i];
-        this.onsetHistory.push(Math.sqrt(sumSq / timeDomainData.length));
-        if (this.onsetHistory.length > this.onsetHistoryMaxLength) this.onsetHistory.shift();
       }
     }
     if (this.drivingMechanism === 'audio') {
@@ -762,30 +832,80 @@ class ChladniSimulator {
   _autoCorrelatePitch(buffer, sampleRate) {
     let bufSize = buffer.length;
     let rms = 0;
-    for (let i = 0; i < bufSize; i++) rms += buffer[i] * buffer[i];
+    for (let i = 0; i < bufSize; i++) {
+      let v = buffer[i];
+      rms += v * v;
+    }
     rms = Math.sqrt(rms / bufSize);
-    if (rms < 0.01) return -1;
-    let C = new Float32Array(bufSize).fill(0);
+    const noiseFloor = 0.005 + (rms * 0.1);
+    if (rms < noiseFloor) return -1;
+    let C = new Float32Array(bufSize);
     for (let lag = 0; lag < bufSize; lag++) {
       let sum = 0;
       for (let i = 0; i < bufSize - lag; i++) sum += buffer[i] * buffer[i + lag];
       C[lag] = sum;
     }
-    let d = 0;
-    while (d < bufSize && C[d] > C[d + 1]) d++;
-    let maxval = -1, maxpos = -1;
-    for (let i = d; i < bufSize; i++) {
-      if (C[i] > maxval) { maxval = C[i]; maxpos = i; }
+    let C_norm = new Float32Array(bufSize);
+    let C0 = C[0] > 1e-9 ? C[0] : 1e-9;
+    for (let lag = 0; lag < bufSize; lag++) {
+      C_norm[lag] = C[lag] / C0;
     }
-    let T0 = maxpos;
-    if (T0 > 0 && T0 < bufSize - 1) {
-        let y1 = C[T0 - 1], y2 = C[T0], y3 = C[T0 + 1];
-        let p = (y3 - y1) / (2 * (2 * y2 - y3 - y1));
-        if (isFinite(p)) T0 += p;
+    let candidates = [];
+    for (let off = this.MIN_SAMPLES_FOR_PITCH_DETECTION; off <= this.MAX_SAMPLES_FOR_PITCH_DETECTION && off < C_norm.length - 1; off++) {
+      if (C_norm[off] > C_norm[off - 1] && C_norm[off] > C_norm[off + 1] && C_norm[off] > 0.1) {
+        candidates.push({ lag: off, value: C_norm[off] });
+      }
     }
-    if (T0 === 0) return -1;
-    const freq = sampleRate / T0;
-    return (freq < PITCH_MIN_FREQUENCY_HZ || freq > PITCH_MAX_FREQUENCY_HZ) ? -1 : freq;
+    if (candidates.length === 0) return -1;
+    candidates.sort((a, b) => b.value - a.value);
+    candidates = candidates.slice(0, 3);
+    let bestCandidate = null;
+    let bestScore = -Infinity;
+    for (let candidate of candidates) {
+      let period_cand = candidate.lag;
+      let freq_cand = sampleRate / period_cand;
+      if (freq_cand < PITCH_MIN_FREQUENCY_HZ || freq_cand > PITCH_MAX_FREQUENCY_HZ) continue;
+      let score = candidate.value * (1 + (rms - noiseFloor) * 0.5);
+      if (this.lastStablePitchFrequency > 0) {
+        let freqRatio = freq_cand / this.lastStablePitchFrequency;
+        if (Math.abs(freqRatio - 1) < 0.25) score += 0.5;
+        else if (Math.abs(freqRatio - 0.5) < 0.1 || Math.abs(freqRatio - 2) < 0.2) score += 0.3;
+      }
+      let harmonicPresenceScore = 0;
+      for (let harmonicMultiple = 2; harmonicMultiple <= 3; harmonicMultiple++) {
+        let harmonicPeriod = Math.round(period_cand / harmonicMultiple);
+        if (harmonicPeriod >= this.MIN_SAMPLES_FOR_PITCH_DETECTION && harmonicPeriod < C_norm.length) {
+          if (C_norm[harmonicPeriod] > 0.05) {
+            harmonicPresenceScore += C_norm[harmonicPeriod] * 0.2;
+          }
+        }
+      }
+      score += harmonicPresenceScore;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+      }
+    }
+    if (!bestCandidate) return -1;
+    let period = parseFloat(bestCandidate.lag);
+    if (bestCandidate.lag > 0 && bestCandidate.lag < C.length - 1) {
+      let y1 = C[bestCandidate.lag - 1], y2 = C[bestCandidate.lag], y3 = C[bestCandidate.lag + 1];
+      let denominator = 2 * (2 * y2 - y1 - y3);
+      if (Math.abs(denominator) > 1e-6) {
+        let ps = (y3 - y1) / denominator;
+        if (isFinite(ps) && Math.abs(ps) < 0.5) period = bestCandidate.lag + ps;
+      }
+    }
+    let finalFreq = period > 0 ? sampleRate / period : -1;
+    if (!(finalFreq >= PITCH_MIN_FREQUENCY_HZ && finalFreq <= PITCH_MAX_FREQUENCY_HZ)) {
+      const rawBestFreq = sampleRate / bestCandidate.lag;
+      if (rawBestFreq >= PITCH_MIN_FREQUENCY_HZ && rawBestFreq <= PITCH_MAX_FREQUENCY_HZ) {
+        finalFreq = rawBestFreq;
+      } else {
+        finalFreq = -1;
+      }
+    }
+    return finalFreq;
   }
   _setupWebAudioSystem() {
     try {
@@ -794,10 +914,23 @@ class ChladniSimulator {
       document.addEventListener('click', resume, { once: true });
       this.pitchDetectorAnalyserNode = this.mainAudioContext.createAnalyser();
       this.pitchDetectorAnalyserNode.fftSize = 2048;
+      this.pitchDetectorAnalyserNode.smoothingTimeConstant = 0;
       this.pitchDetectorSignalBuffer = new Float32Array(this.pitchDetectorAnalyserNode.fftSize);
+      const sr = this.mainAudioContext.sampleRate;
+      this.MIN_SAMPLES_FOR_PITCH_DETECTION = Math.max(4, Math.floor(sr / PITCH_MAX_FREQUENCY_HZ));
+      this.MAX_SAMPLES_FOR_PITCH_DETECTION = Math.min(Math.floor(this.pitchDetectorAnalyserNode.fftSize / 2), Math.floor(sr / PITCH_MIN_FREQUENCY_HZ));
       this.fftAnalyserNode = this.mainAudioContext.createAnalyser();
       this.fftAnalyserNode.fftSize = 256;
       this.frequencyData = new Uint8Array(this.fftAnalyserNode.frequencyBinCount);
+      const createBpmAnalyzer = () => {
+        const analyser = this.mainAudioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.3;
+        return analyser;
+      };
+      this.bpmAnalyzers.low.analyser = createBpmAnalyzer();
+      this.bpmAnalyzers.mid.analyser = createBpmAnalyzer();
+      this.bpmAnalyzers.high.analyser = createBpmAnalyzer();
     } catch (e) {
       throw new Error("Web Audio API is not available in this browser.");
     }
@@ -824,6 +957,12 @@ class ChladniSimulator {
       this.actualAppliedFrequency = this.currentFrequency;
       if (this.fdmVariable) this.fdmVariable.material.uniforms.u_excMode.value = 1;
     }
+    const newGridSize = this._getOptimalGridSizeForFrequency(this.actualAppliedFrequency);
+    if (Math.abs(newGridSize - this.GRID_SIZE) > 2) {
+      this.GRID_SIZE = newGridSize;
+      this._reinitGPUSimulation();
+      return;
+    }
     if (this.uiElements.particleSpeedSlider) {
       const v = parseFloat(this.uiElements.particleSpeedSlider.value);
       if (v <= 50) this.particleSimulationSpeedScale = 0.1 + (1.0 - 0.1) * (v / 50);
@@ -835,8 +974,8 @@ class ChladniSimulator {
   _setActiveDrivingMechanism(newMechanism) {
     this.drivingMechanism = newMechanism;
     if (this.uiElements.activeModeDisplay) {
-        const modeMap = {'modal': 'Режим: Модальный', 'point': 'Режим: Точка', 'audio': 'Режим: Аудиофайл', 'microphone': 'Режим: Микрофон', 'desktop_audio': 'Режим: Захват звука'};
-        this.uiElements.activeModeDisplay.innerHTML = modeMap[newMechanism] || 'Режим: Неизвестный';
+      const modeMap = { 'modal': 'Режим: Модальный', 'point': 'Режим: Точка', 'audio': 'Режим: Аудиофайл', 'microphone': 'Режим: Микрофон', 'desktop_audio': 'Режим: Захват звука' };
+      this.uiElements.activeModeDisplay.innerHTML = modeMap[newMechanism] || 'Режим: Неизвестный';
     }
     this._resetFullSimulationState();
   }
@@ -881,17 +1020,17 @@ class ChladniSimulator {
     const newVal = isCheckbox ? value : this._parseInputNumber(value, this[paramName], isInt);
     if (this[paramName] === newVal && !isCheckbox) return;
     let needsGpuReinit = false;
-    if (paramName === 'GRID_SIZE') {
-        const roundedVal = this._roundToOddInteger(newVal);
-        if (this.GRID_SIZE !== roundedVal) { this.GRID_SIZE = roundedVal; needsGpuReinit = true; }
+    if (paramName === 'GRID_SIZE' || paramName === 'MIN_GRID_SIZE' || paramName === 'MAX_GRID_SIZE') {
+      const roundedVal = this._roundToOddInteger(newVal);
+      if (this[paramName] !== roundedVal) { this[paramName] = roundedVal; needsGpuReinit = true; }
     } else if (paramName === 'MAX_PARTICLE_COUNT') {
-        if (this.MAX_PARTICLE_COUNT !== newVal) { 
-            this.MAX_PARTICLE_COUNT = newVal; 
-            this.ACTIVE_PARTICLE_COUNT = this.enableDynamicParticleDensity ? MIN_DYNAMIC_PARTICLE_COUNT : newVal;
-            needsGpuReinit = true; 
-        }
+      if (this.MAX_PARTICLE_COUNT !== newVal) {
+        this.MAX_PARTICLE_COUNT = newVal;
+        this.ACTIVE_PARTICLE_COUNT = this.enableDynamicParticleDensity ? MIN_DYNAMIC_PARTICLE_COUNT : newVal;
+        needsGpuReinit = true;
+      }
     } else {
-        this[paramName] = newVal;
+      this[paramName] = newVal;
     }
     if (needsGpuReinit) this._reinitGPUSimulation();
     else if (paramName === 'VISUAL_PARTICLE_SIZE') this._createParticleSystem();
@@ -922,7 +1061,7 @@ class ChladniSimulator {
     setCtrl('advParticleForceBase', this.PARTICLE_FORCE_BASE, 1, null);
     setCtrl('advParticleDampingBase', this.PARTICLE_DAMPING_BASE, null, 3);
     setCtrl('advMaxParticleSpeed', this.MAX_PARTICLE_SPEED, null, 1);
-    if(this.uiElements.advEnableRepulsion) this.uiElements.advEnableRepulsion.checked = this.ENABLE_PARTICLE_REPULSION;
+    if (this.uiElements.advEnableRepulsion) this.uiElements.advEnableRepulsion.checked = this.ENABLE_PARTICLE_REPULSION;
     setCtrl('advRepulsionRadius', this.PARTICLE_REPULSION_RADIUS, null, 3);
     setCtrl('advRepulsionStrength', this.PARTICLE_REPULSION_STRENGTH, null, 4);
     setCtrl('advExcBaseAmp', this.EXCITATION_BASE_AMP, 1, null);
@@ -1140,65 +1279,127 @@ class ChladniSimulator {
   }
   
   async _loadAndPlayTrack(trackIndex) {
+    if (this.isLoadingTrack) return;
     if (trackIndex < 0 || trackIndex >= this.playlistFiles.length) {
-      this._stopLoadedAudioFilePlayback(true);
+      await this._stopLoadedAudioFilePlayback(true);
       return;
     }
+    this.isLoadingTrack = true;
     this.currentPlaylistIndex = trackIndex;
     const file = this.playlistFiles[trackIndex];
     this.activeFetchID++;
     const currentFetchID = this.activeFetchID;
     
-    this._findAndLoadLyrics(file, currentFetchID);
-    this.audioElement.src = URL.createObjectURL(file);
+    if (this.uiElements.audioInfoEl) this.uiElements.audioInfoEl.textContent = `Обработка: ${file.name}...`;
+
+    await this._findAndLoadLyrics(file, currentFetchID);
     
-    if (!this.audioFileSourceNode) {
-        this.audioFileSourceNode = this.mainAudioContext.createMediaElementSource(this.audioElement);
-        this.audioFileSourceNode.connect(this.mainAudioContext.destination);
-        this.audioFileSourceNode.connect(this.pitchDetectorAnalyserNode);
-        if(this.fftAnalyserNode) this.audioFileSourceNode.connect(this.fftAnalyserNode);
-    }
-      
     try {
-        await this.audioElement.play();
-        this._setActiveDrivingMechanism('audio');
-        this.isAudioFilePlaying = true;
-        this.isAudioFilePaused = false;
-        this._updateAudioFileUI();
+      const arrayBuffer = await file.arrayBuffer();
+      this.audioFileBuffer = await this.mainAudioContext.decodeAudioData(arrayBuffer);
+      this.audioFileDuration = this.audioFileBuffer.duration;
+
+      let bands = null;
+      if (this.audioFileDuration < MAX_AUDIO_DURATION_FOR_MULTIBAND_S) {
+        bands = await this._createFrequencyBands(this.audioFileBuffer);
+      }
+      this.bandSources = bands;
+
+      if (this.audioElement && this.audioElement.src && this.audioElement.src.startsWith('blob:')) {
+        URL.revokeObjectURL(this.audioElement.src);
+      }
+      
+      this.audioElement.src = URL.createObjectURL(file);
+      
+      if (!this.audioFileSourceNode) {
+          this.audioFileSourceNode = this.mainAudioContext.createMediaElementSource(this.audioElement);
+          this.audioFileSourceNode.connect(this.mainAudioContext.destination);
+          this.audioFileSourceNode.connect(this.pitchDetectorAnalyserNode);
+          if(this.fftAnalyserNode) this.audioFileSourceNode.connect(this.fftAnalyserNode);
+      }
+        
+      await this._playCurrentAudioElement();
+      this._setActiveDrivingMechanism('audio');
+      this.isAudioFilePlaying = true;
+      this.isAudioFilePaused = false;
     } catch (e) {
-      alert(`Error playing audio file: ${file.name}. ${e.message}`);
-      this._nextTrack();
+      alert(`Error processing audio file: ${file.name}. ${e.message}`);
+      await this._nextTrack();
+    } finally {
+        this.isLoadingTrack = false;
+        this._updateAudioFileUI();
     }
+  }
+
+  async _playCurrentAudioElement() {
+    if (!this.audioElement || !this.mainAudioContext) return;
+    if (this.mainAudioContext.state === 'suspended') await this.mainAudioContext.resume();
+    this.audioElement.currentTime = this.audioPlaybackOffset;
+
+    if (this.bandSources) {
+      this._stopBPMAnalysisLoop(); // Stop any previous loops
+      const { low, mid, high } = await this._createFrequencyBands(this.audioFileBuffer);
+      this.bandSources.low = this.mainAudioContext.createBufferSource();
+      this.bandSources.low.buffer = low;
+      this.bandSources.low.connect(this.bpmAnalyzers.low.analyser);
+      this.bandSources.low.start(0, this.audioPlaybackOffset);
+
+      this.bandSources.mid = this.mainAudioContext.createBufferSource();
+      this.bandSources.mid.buffer = mid;
+      this.bandSources.mid.connect(this.bpmAnalyzers.mid.analyser);
+      this.bandSources.mid.start(0, this.audioPlaybackOffset);
+
+      this.bandSources.high = this.mainAudioContext.createBufferSource();
+      this.bandSources.high.buffer = high;
+      this.bandSources.high.connect(this.bpmAnalyzers.high.analyser);
+      this.bandSources.high.start(0, this.audioPlaybackOffset);
+    }
+
+    await this.audioElement.play();
+    this.isAudioFilePlaying = true;
+    this.isAudioFilePaused = false;
+    if (this.bandSources) this._startBPMAnalysisLoop();
   }
 
   _nextTrack() { this._loadAndPlayTrack((this.currentPlaylistIndex + 1) % this.playlistFiles.length); }
   _prevTrack() { this._loadAndPlayTrack((this.currentPlaylistIndex - 1 + this.playlistFiles.length) % this.playlistFiles.length); }
 
-  _stopLoadedAudioFilePlayback(fullReset = false) {
+  async _stopLoadedAudioFilePlayback(fullReset = false) {
+    this.isLoadingTrack = false;
+    this._stopBPMAnalysisLoop();
     if (this.audioElement) {
-        this.audioElement.pause();
-        this.audioElement.removeAttribute('src'); 
-        this.audioElement.load();
+      this.audioElement.pause();
+      if (this.audioElement.src && this.audioElement.src.startsWith('blob:')) {
+        URL.revokeObjectURL(this.audioElement.src);
+      }
+      this.audioElement.removeAttribute('src'); 
+      this.audioElement.load();
     }
+    if (this.audioFileSourceNode) this.audioFileSourceNode.disconnect();
     this.isAudioFilePlaying = false;
     this.isAudioFilePaused = false;
+    this.audioPlaybackOffset = 0;
     if (this.drivingMechanism === 'audio') this._setActiveDrivingMechanism('modal');
     if (fullReset) {
       this.playlistFiles = [];
       this.currentPlaylistIndex = -1;
+      this.audioFileBuffer = null;
       if (this.uiElements.audioFileInput) this.uiElements.audioFileInput.value = "";
     }
     this._updateAudioFileUI();
   }
   
-  _togglePauseLoadedAudioFilePlayback() {
-    if (!this.audioElement || !this.isAudioFilePlaying) return;
-    if (this.audioElement.paused) {
-      this.audioElement.play();
+  async _togglePauseLoadedAudioFilePlayback() {
+    if (!this.audioElement || !(this.isAudioFilePlaying || this.isAudioFilePaused)) return;
+    if (this.isAudioFilePaused) {
       this.isAudioFilePaused = false;
+      await this._playCurrentAudioElement();
     } else {
+      this.audioPlaybackOffset = this.audioElement.currentTime;
       this.audioElement.pause();
+      this.isAudioFilePlaying = false;
       this.isAudioFilePaused = true;
+      this._stopBPMAnalysisLoop();
     }
     if (this.uiElements.toggleAudioPauseButton) this.uiElements.toggleAudioPauseButton.textContent = this.isAudioFilePaused ? "Продолжить" : "Пауза";
   }
@@ -1224,7 +1425,7 @@ class ChladniSimulator {
 
   _updateAudioFileProgressControlsUI() {
     if (!this.audioElement || !isFinite(this.audioFileDuration) || this.audioFileDuration === 0) return;
-    const currentTime = this.audioElement.currentTime;
+    const currentTime = this.isAudioFilePaused ? this.audioPlaybackOffset : this.audioElement.currentTime;
     if (this.uiElements.audioProgressSlider && document.activeElement !== this.uiElements.audioProgressSlider) {
       this.uiElements.audioProgressSlider.value = (currentTime / this.audioFileDuration) * 100;
     }
@@ -1238,15 +1439,24 @@ class ChladniSimulator {
       if(this.microphoneStream) this.microphoneStream.getTracks().forEach(track => track.stop());
       if(this.microphoneSourceNode) this.microphoneSourceNode.disconnect();
       this.isMicrophoneEnabled = false;
+      this._stopBPMAnalysisLoop();
       if(this.drivingMechanism === 'microphone') this._setActiveDrivingMechanism('modal');
     } else {
       try {
         await this._stopLoadedAudioFilePlayback(true);
         this.microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         this.microphoneSourceNode = this.mainAudioContext.createMediaStreamSource(this.microphoneStream);
-        this.microphoneSourceNode.connect(this.pitchDetectorAnalyserNode);
-        if(this.fftAnalyserNode) this.microphoneSourceNode.connect(this.fftAnalyserNode);
+        if (this.pitchDetectorAnalyserNode) this.microphoneSourceNode.connect(this.pitchDetectorAnalyserNode);
+        if (this.fftAnalyserNode) this.microphoneSourceNode.connect(this.fftAnalyserNode);
+        if (this.bpmAnalyzers.low.analyser) {
+            const lowpass = this.mainAudioContext.createBiquadFilter();
+            lowpass.type = "lowpass";
+            lowpass.frequency.value = 250;
+            this.microphoneSourceNode.connect(lowpass);
+            lowpass.connect(this.bpmAnalyzers.low.analyser);
+        }
         this.isMicrophoneEnabled = true;
+        this._startBPMAnalysisLoop();
         this._setActiveDrivingMechanism('microphone');
       } catch (e) { alert('Доступ к микрофону запрещен или невозможен.'); }
     }
@@ -1258,6 +1468,7 @@ class ChladniSimulator {
       if(this.desktopStream) this.desktopStream.getTracks().forEach(track => track.stop());
       if(this.desktopAudioSourceNode) this.desktopAudioSourceNode.disconnect();
       this.isDesktopAudioEnabled = false;
+      this._stopBPMAnalysisLoop();
       if(this.drivingMechanism === 'desktop_audio') this._setActiveDrivingMechanism('modal');
     } else {
       try {
@@ -1270,38 +1481,99 @@ class ChladniSimulator {
           return;
         }
         this.desktopAudioSourceNode = this.mainAudioContext.createMediaStreamSource(this.desktopStream);
-        this.desktopAudioSourceNode.connect(this.pitchDetectorAnalyserNode);
-        if(this.fftAnalyserNode) this.desktopAudioSourceNode.connect(this.fftAnalyserNode);
+        if (this.pitchDetectorAnalyserNode) this.desktopAudioSourceNode.connect(this.pitchDetectorAnalyserNode);
+        if (this.fftAnalyserNode) this.desktopAudioSourceNode.connect(this.fftAnalyserNode);
+        if (this.bpmAnalyzers.low.analyser) {
+            const lowpass = this.mainAudioContext.createBiquadFilter();
+            lowpass.type = "lowpass";
+            lowpass.frequency.value = 250;
+            this.desktopAudioSourceNode.connect(lowpass);
+            lowpass.connect(this.bpmAnalyzers.low.analyser);
+        }
         this.isDesktopAudioEnabled = true;
+        this._startBPMAnalysisLoop();
         this._setActiveDrivingMechanism('desktop_audio');
       } catch (e) { alert(`Не удалось захватить аудио с экрана: ${e.message}`); }
     }
     this._updateUIToggleButtons();
   }
   
-  _findAndLoadLyrics(file, fetchID) {
-    if (typeof jsmediatags === 'undefined') {
-      if(this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Библиотека для субтитров не найдена.';
-      return;
+  _parseTrackInfoFromName(fileName) {
+    let cleanedName = fileName.replace(/\.[^/.]+$/, "").replace(/_/g, ' ');
+    cleanedName = cleanedName.replace(/^♫\s*/, '');
+    cleanedName = cleanedName.replace(/\s*\[.*?\]\s*/g, ' ').replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s*\{.*?\}\s*/g, ' ').trim();
+    cleanedName = cleanedName.replace(/^\s*\d+[\s.-]*/, '');
+    const junkWords = ['official', 'video', 'lyrics', 'remix', 'live', 'acoustic', 'explicit', 'clean', 'audio', 'hq'];
+    const junkRegex = new RegExp(`\\b(${junkWords.join('|')})\\b`, 'gi');
+    cleanedName = cleanedName.replace(junkRegex, '').replace(/\s+/g, ' ').trim();
+    const parts = cleanedName.split(' - ');
+    let artist = '';
+    let title = '';
+    if (parts.length >= 2) {
+      artist = parts[0].trim();
+      title = parts.slice(1).join(' - ').trim();
+    } else {
+      title = cleanedName.trim();
     }
-    jsmediatags.read(file, {
-      onSuccess: (tag) => {
-        if (fetchID !== this.activeFetchID) return;
-        const lyricsData = tag.tags.lyrics || tag.tags.USLT;
-        if (lyricsData) {
-          this.currentSubtitles = this._parseLRC(typeof lyricsData === 'string' ? lyricsData : lyricsData.lyrics);
-          if(this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = this.currentSubtitles.length > 0 ? 'Субтитры найдены.' : 'Субтитры не найдены.';
-        } else {
-          if(this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Субтитры не найдены.';
+    return { artist, title };
+  }
+
+  async _findAndLoadLyrics(file, fetchID) {
+    const lyricsEl = this.uiElements.lyricsInfoEl;
+    if (lyricsEl) lyricsEl.textContent = 'Поиск субтитров...';
+    this.currentSubtitles = [];
+    if (typeof jsmediatags === 'undefined') {
+        if(lyricsEl) lyricsEl.textContent = 'Библиотека для субтитров не найдена.';
+        return;
+    }
+    try {
+      const tags = await new Promise((res, rej) => jsmediatags.read(file, { onSuccess: res, onError: rej }));
+      if (fetchID !== this.activeFetchID) return;
+      const lyricsData = tags.tags.lyrics || tags.tags.USLT;
+      if (lyricsData) {
+        const lrcText = typeof lyricsData === 'string' ? lyricsData : lyricsData.lyrics;
+        this.currentSubtitles = this._parseLRC(lrcText);
+        if (this.currentSubtitles.length > 0) {
+          if (lyricsEl) lyricsEl.textContent = 'Субтитры найдены (встроены).';
+          return;
         }
-      },
-      onError: () => {
-        if(this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Ошибка чтения тегов.';
       }
-    });
+      const artist = tags.tags.artist?.trim();
+      const title = tags.tags.title?.trim();
+      if (title) {
+        await this._fetchLyricsFromLrclib(artist || '', title, fetchID);
+        return;
+      }
+    } catch (e) { }
+    if (fetchID !== this.activeFetchID) return;
+    const infoFromName = this._parseTrackInfoFromName(file.name);
+    if (infoFromName.title) {
+      await this._fetchLyricsFromLrclib(infoFromName.artist, infoFromName.title, fetchID);
+    } else {
+      if (lyricsEl) lyricsEl.textContent = 'Не удалось найти метаданные для поиска.';
+    }
+  }
+
+  async _fetchLyricsFromLrclib(artist, track, requestIndex) {
+    if (this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Идет поиск текста в сети...';
+    const url = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(track)}`;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (this.activeFetchID !== requestIndex || !response.ok) return;
+      const data = await response.json();
+      if (data && data.syncedLyrics) {
+        this.currentSubtitles = this._parseLRC(data.syncedLyrics);
+        if (this.currentSubtitles.length > 0) {
+          if (this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Субтитры найдены (lrclib.net)';
+          return;
+        }
+      }
+    } catch (e) { }
+    if (this.activeFetchID === requestIndex && this.uiElements.lyricsInfoEl) this.uiElements.lyricsInfoEl.textContent = 'Субтитры не найдены.';
   }
 
   _parseLRC(lrcText) {
+    if (!lrcText) return [];
     const lines = lrcText.split('\n');
     const subtitles = [];
     lines.forEach(line => {
@@ -1312,24 +1584,21 @@ class ChladniSimulator {
         if (text) subtitles.push({ time, text });
       }
     });
-    return subtitles.sort((a,b) => a.time - b.time);
+    return subtitles.sort((a, b) => a.time - b.time);
   }
 
   _updateSubtitles() {
     const subContainer = this.uiElements.subtitleContainer;
-    if (!this.isSubtitlesEnabled || !subContainer) return;
-    
-    if (!this.audioElement || this.currentSubtitles.length === 0) {
-      if (subContainer.textContent !== '') {
-        subContainer.textContent = '';
-        subContainer.classList.remove('visible');
-      }
+    if (!this.isSubtitlesEnabled || !subContainer || !this.audioElement) {
+      if (subContainer && subContainer.textContent !== '') subContainer.textContent = '';
+      if (subContainer) subContainer.classList.remove('visible');
       return;
     }
+    const currentTime = this.audioElement.currentTime;
     let low = 0, high = this.currentSubtitles.length - 1, bestIndex = -1;
-    while(low <= high) {
+    while (low <= high) {
       const mid = Math.floor((low + high) / 2);
-      if (this.currentSubtitles[mid].time <= this.audioElement.currentTime) {
+      if (this.currentSubtitles[mid].time <= currentTime) {
         bestIndex = mid;
         low = mid + 1;
       } else {
@@ -1343,42 +1612,202 @@ class ChladniSimulator {
     }
   }
 
-  _autocorrelationForBPM(data) {
-    const N = data.length;
-    const mean = data.reduce((a, b) => a + b, 0) / N;
-    const variance = data.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / N;
-    if (variance === 0) return new Array(N).fill(0);
-    const ac = new Array(N).fill(0);
-    for (let lag = 0; lag < N; lag++) {
-      let sum = 0;
-      for (let i = 0; i < N - lag; i++) sum += (data[i] - mean) * (data[i + lag] - mean);
-      ac[lag] = sum / ((N - lag) * variance);
+  async _createFrequencyBands(originalBuffer) {
+    if (!originalBuffer) return null;
+    const offlineCtxOptions = { length: originalBuffer.length, sampleRate: originalBuffer.sampleRate, numberOfChannels: originalBuffer.numberOfChannels };
+    const createBand = async (filterType, frequency, q) => {
+      const ctx = new OfflineAudioContext(offlineCtxOptions);
+      const source = ctx.createBufferSource();
+      source.buffer = originalBuffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = filterType;
+      filter.frequency.value = frequency;
+      if (q) filter.Q.value = q;
+      source.connect(filter);
+      filter.connect(ctx.destination);
+      source.start(0);
+      return await ctx.startRendering();
     }
-    return ac;
+    try {
+      const [low, mid, high] = await Promise.all([
+        createBand('lowpass', 250, 0.7071),
+        createBand('bandpass', 1500, 0.8),
+        createBand('highpass', 4000, 0.7071)
+      ]);
+      return { low, mid, high };
+    } catch (e) {
+      return null;
+    }
   }
 
-  _updateBPM() {
-    if (this.onsetHistory.length < 50) return;
-    const ac = this._autocorrelationForBPM(this.onsetHistory);
-    let maxAc = -1;
-    let bestLag = -1;
-    
-    const minLag = Math.floor(BPM_ANALYSIS_SAMPLE_RATE * 60 / 220); 
-    const maxLag = Math.floor(BPM_ANALYSIS_SAMPLE_RATE * 60 / 60);
+  _startBPMAnalysisLoop() {
+    if (this.bpmUpdateIntervalId) clearInterval(this.bpmUpdateIntervalId);
+    const sourceActive = (this.isAudioFilePlaying && !this.isAudioFilePaused) || this.isMicrophoneEnabled || this.isDesktopAudioEnabled;
+    if (!sourceActive || !this.mainAudioContext || this.mainAudioContext.state !== 'running') return;
+    this.allDetectedBeats = [];
+    for (const bandName in this.bpmAnalyzers) {
+      const band = this.bpmAnalyzers[bandName];
+      band.history = [];
+      if (band.previousData) band.previousData.fill(0);
+      band.threshold = 100;
+    }
+    this.bpmUpdateIntervalId = setInterval(() => {
+      const currentSourceActive = (this.isAudioFilePlaying && !this.isAudioFilePaused) || this.isMicrophoneEnabled || this.isDesktopAudioEnabled;
+      if (currentSourceActive && this.mainAudioContext.state === 'running') {
+        this._updateAndAnalyzeBPM();
+      } else {
+        this._stopBPMAnalysisLoop();
+      }
+    }, 80);
+  }
 
-    for (let lag = minLag; lag <= maxLag && lag < ac.length; lag++) {
-      if (ac[lag] > maxAc) {
-        maxAc = ac[lag];
-        bestLag = lag;
+  _stopBPMAnalysisLoop() {
+    if (this.bpmUpdateIntervalId) {
+      clearInterval(this.bpmUpdateIntervalId);
+      this.bpmUpdateIntervalId = null;
+    }
+    if (this.bandSources) {
+      try { if(this.bandSources.low) this.bandSources.low.stop(); if(this.bandSources.mid) this.bandSources.mid.stop(); if(this.bandSources.high) this.bandSources.high.stop(); } catch (e) { }
+      this.bandSources = null;
+    }
+  }
+
+  _updateAndAnalyzeBPM() {
+    if (!this.mainAudioContext || this.mainAudioContext.state !== 'running') return;
+    const currentTime = this.mainAudioContext.currentTime;
+    let newBeats = [];
+    for (const bandName of ['low', 'mid', 'high']) {
+      const band = this.bpmAnalyzers[bandName];
+      if (!band.analyser) continue;
+      const flux = this._getSpectralFlux(band);
+      band.history.push(flux);
+      if (band.history.length > 50) band.history.shift();
+      this._updateBPMThreshold(band);
+      const isPeak = this._isLocalMaximum(flux, band.history);
+      if (isPeak && flux > band.threshold) {
+        const lastBeatTime = this.allDetectedBeats.length > 0 ? this.allDetectedBeats[this.allDetectedBeats.length - 1].time : -1;
+        if (currentTime - lastBeatTime < 0.22) continue;
+        newBeats.push({ time: currentTime, band: bandName, strength: flux });
       }
     }
-    if (bestLag !== -1 && maxAc > 0.1) {
-      const bpm = (60 * BPM_ANALYSIS_SAMPLE_RATE) / bestLag;
-      const smoothedBPM = this.lastBPM ? 0.9 * this.lastBPM + 0.1 * bpm : bpm;
-      this.lastBPM = smoothedBPM;
-      if (this.uiElements.bpmValue) this.uiElements.bpmValue.textContent = Math.round(smoothedBPM);
-      if (this.uiElements.bpmConfidence) this.uiElements.bpmConfidence.textContent = `${Math.min(100, maxAc * 150).toFixed(0)}%`;
-      if (this.uiElements.bpmInfo) this.uiElements.bpmInfo.style.display = 'block';
+    if (newBeats.length > 0) {
+      this.allDetectedBeats.push(...newBeats);
+      if (this.allDetectedBeats.length > 60) this.allDetectedBeats = this.allDetectedBeats.slice(this.allDetectedBeats.length - 60);
+    }
+    this._calculateCombinedBPM();
+  }
+  
+  _getSpectralFlux(band) {
+    if (!band.analyser || !this.mainAudioContext || this.mainAudioContext.state !== 'running') return 0;
+    const bufferLength = band.analyser.frequencyBinCount;
+    if (!band.frequencyData || band.frequencyData.length !== bufferLength) band.frequencyData = new Uint8Array(bufferLength);
+    band.analyser.getByteFrequencyData(band.frequencyData);
+    let flux = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const diff = band.frequencyData[i] - (band.previousData ? band.previousData[i] : 0);
+      flux += diff > 0 ? diff : 0;
+    }
+    if (!band.previousData || band.previousData.length !== bufferLength) band.previousData = new Uint8Array(bufferLength);
+    band.previousData.set(band.frequencyData);
+    return flux;
+  }
+  
+  _updateBPMThreshold(band) {
+    const fluxHistoryForThreshold = band.history.slice(-50);
+    if (fluxHistoryForThreshold && fluxHistoryForThreshold.length > 10) {
+      const sortedFlux = [...fluxHistoryForThreshold].sort((a, b) => a - b);
+      const percentileIndex = Math.floor(sortedFlux.length * 0.70);
+      let newThreshold = sortedFlux[percentileIndex] * 0.9;
+      newThreshold = Math.max(30, Math.min(newThreshold, 800));
+      band.threshold = (band.threshold || 100) * 0.95 + newThreshold * 0.05;
+    } else if (band.threshold) {
+      band.threshold = Math.max(30, band.threshold * 0.99);
+    }
+  }
+  
+  _isLocalMaximum(fluxValue, history) {
+    if (!history || history.length < 3) return false;
+    const checkWindow = Math.min(Math.floor(history.length / 2), Math.floor(this.BPM_PEAK_DETECTION_WINDOW / 2));
+    if (checkWindow < 1) return false;
+    let isMax = true;
+    for (let i = 1; i <= checkWindow; i++) {
+      const pastIndex = history.length - 1 - i;
+      if (pastIndex < 0) break;
+      if (fluxValue <= history[pastIndex]) {
+        isMax = false;
+        break;
+      }
+    }
+    return isMax;
+  }
+  
+  _calculateCombinedBPM() {
+    if (this.allDetectedBeats.length < 8) {
+      if (this.uiElements.bpmConfidence) this.uiElements.bpmConfidence.textContent = 'ожидание...';
+      return;
+    }
+    const intervals = [];
+    for (let i = 1; i < this.allDetectedBeats.length; i++) {
+      const interval = this.allDetectedBeats[i].time - this.allDetectedBeats[i - 1].time;
+      if (interval > 0.20 && interval < 2.0) intervals.push({ interval, band: this.allDetectedBeats[i].band, bpm: 60.0 / interval });
+    }
+    if (intervals.length < 5) return;
+    const bpmClusters = {};
+    const bpmTolerance = 5;
+    intervals.forEach(item => {
+      const bpm = item.bpm;
+      let foundCluster = false;
+      for (const key in bpmClusters) {
+        if (Math.abs(bpm - key) < bpmTolerance) {
+          bpmClusters[key].push(item);
+          foundCluster = true;
+          break;
+        }
+      }
+      if (!foundCluster) bpmClusters[bpm] = [item];
+    });
+    let bestCandidate = null;
+    let maxScore = -1;
+    for (const key in bpmClusters) {
+      const cluster = bpmClusters[key];
+      if (cluster.length < 3) continue;
+      let score = cluster.length;
+      cluster.forEach(item => {
+        if (item.band === 'low') score += BPM_LOW_BAND_WEIGHT;
+        if (item.band === 'mid') score += BPM_MID_BAND_WEIGHT;
+        if (item.band === 'high') score += BPM_HIGH_BAND_WEIGHT;
+      });
+      const clusterIntervals = cluster.map(item => item.interval).sort((a, b) => a - b);
+      const meanInterval = clusterIntervals.reduce((sum, i) => sum + i, 0) / cluster.length;
+      if (meanInterval > 0) {
+        const intervalDeviations = clusterIntervals.map(item => Math.abs(item - meanInterval));
+        const tempoConsistency = 1 - (intervalDeviations.reduce((sum, dev) => sum + dev, 0) / cluster.length) / meanInterval;
+        score *= Math.max(0.1, tempoConsistency);
+      }
+      const doubleBPM = parseFloat(key) * 2;
+      for (const otherKey in bpmClusters) {
+        if (Math.abs(doubleBPM - otherKey) < bpmTolerance * 2) {
+          if (bpmClusters[otherKey].length > cluster.length / 2) score *= 0.7;
+        }
+      }
+      if (score > maxScore) {
+        maxScore = score;
+        bestCandidate = cluster;
+      }
+    }
+    if (bestCandidate) {
+      const candidateIntervals = bestCandidate.map(item => item.interval).sort((a, b) => a - b);
+      const medianInterval = candidateIntervals[Math.floor(candidateIntervals.length / 2)];
+      if (medianInterval > 0) {
+        const newBPM = 60.0 / medianInterval;
+        const mad = candidateIntervals.reduce((sum, val) => sum + Math.abs(val - medianInterval), 0) / candidateIntervals.length;
+        const confidence = Math.max(0, 1 - (mad / medianInterval));
+        const alpha = Math.min(0.3, Math.abs(newBPM - this.currentBPM) / 50 + 0.05 + (1 - confidence) * 0.1);
+        this.currentBPM = this.currentBPM * (1 - alpha) + newBPM * alpha;
+        this.currentBPM = THREE.MathUtils.clamp(this.currentBPM, 40, 220);
+        if (this.uiElements.bpmValue) this.uiElements.bpmValue.textContent = this.currentBPM.toFixed(1);
+        if (this.uiElements.bpmConfidence) this.uiElements.bpmConfidence.textContent = `${(confidence * 100).toFixed(1)}%`;
+      }
     }
   }
 }
