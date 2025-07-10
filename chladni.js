@@ -4,6 +4,8 @@ import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { LuminosityHighPassShader } from 'three/addons/shaders/LuminosityHighPassShader.js';
 
 const FDM_FRAGMENT_SHADER = `
   #version 300 es
@@ -31,10 +33,13 @@ const FDM_FRAGMENT_SHADER = `
   float sample_boundary(vec2 uv, vec2 offset) {
     vec2 sample_uv = uv + offset;
     vec2 sample_phys = (sample_uv - 0.5) * u_plateRadius * 2.0;
+    float result = 0.0;
     if (length(sample_phys) > u_plateRadius) {
-      return texture(u_fdmTexture_read, uv - offset).r;
+      result = texture(u_fdmTexture_read, uv - offset).r;
+    } else {
+      result = texture(u_fdmTexture_read, sample_uv).r;
     }
-    return texture(u_fdmTexture_read, sample_uv).r;
+    return result;
   }
 
   void main() {
@@ -619,7 +624,7 @@ class ChladniSimulator {
     document.getElementById('scene-container').appendChild(canvas);
 
     this.renderer = new THREE.WebGLRenderer({ canvas: canvas, context: context });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = this.enableShadows;
@@ -818,7 +823,7 @@ class ChladniSimulator {
       this.lastBPMUpdateTime = this.simulationTime;
     }
     
-    this.composer.render(deltaTime);
+    this.composer.render();
   }
 
   _updateAudioProcessing() {
@@ -1088,7 +1093,7 @@ class ChladniSimulator {
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.renderer.setSize(window.innerWidth, window.innerHeight, false);
       this.composer.setSize(window.innerWidth, window.innerHeight);
     }, false);
 
