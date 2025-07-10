@@ -34,8 +34,8 @@ const FDM_FRAGMENT_SHADER = `
   }
 
   void main() {
-    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_fdmTexture_read, 0));
-    vec2 texelSize = 1.0 / vec2(textureSize(u_fdmTexture_read, 0));
+    vec2 uv = gl_FragCoord.xy / resolution.xy;
+    vec2 texelSize = 1.0 / resolution.xy;
     float physX = (uv.x - 0.5) * u_plateRadius * 2.0;
     float physY = (uv.y - 0.5) * u_plateRadius * 2.0;
     if (length(vec2(physX, physY)) > u_plateRadius) {
@@ -143,14 +143,7 @@ const PARTICLE_PHYSICS_FRAGMENT_SHADER = `
 `;
 
 const PARTICLE_VERTEX_SHADER = `
-  #version 300 es
-  precision highp float;
-
   in float instanceId;
-  in vec3 position;
-
-  uniform mat4 modelViewMatrix;
-  uniform mat4 projectionMatrix;
   uniform sampler2D u_particleTexture;
   uniform sampler2D u_displacementTexture;
   uniform vec2 u_particleTexResolution;
@@ -197,9 +190,6 @@ const PARTICLE_VERTEX_SHADER = `
 `;
 
 const PARTICLE_FRAGMENT_SHADER = `
-  #version 300 es
-  precision highp float;
-
   in vec3 v_worldPosition;
   in vec3 v_normal;
   in vec2 v_particleUV;
@@ -677,6 +667,7 @@ class ChladniSimulator {
 
     const particleTexRes = Math.ceil(Math.sqrt(particleCount));
     this.particleMeshMaterial = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
       vertexShader: PARTICLE_VERTEX_SHADER,
       fragmentShader: PARTICLE_FRAGMENT_SHADER,
       uniforms: {
